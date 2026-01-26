@@ -1,0 +1,97 @@
+# Section 15: Spectral Radius Bound by Max Degree
+
+This section proves a standard spectral radius bound: for a symmetric real matrix whose entries are supported on a simple graph and bounded by 1 in absolute value, the largest eigenvalue is at most the graph's maximum degree.
+
+## Statement (informal)
+Let `A` be an `n x n` real symmetric matrix. Let `G` be a simple graph on the same vertex set. Assume
+
+- `|A i j| <= 1` when `G.Adj i j`, and
+- `|A i j| <= 0` otherwise (so those entries are 0).
+
+Then the largest eigenvalue of `A` is at most `G.maxDegree`.
+
+In Lean, this is packaged as:
+
+- `A.IsSymm` gives symmetry (required for real eigenvalues).
+- `sorted_eigenvalues A hA` is a list of eigenvalues, sorted in **nondecreasing order** (i.e., ascending: \(\lambda_1 \leq \lambda_2 \leq \cdots \leq \lambda_n\)).
+- `lambda_max` is `getLast` of that list, i.e., the **largest** eigenvalue \(\lambda_n\).
+- The conclusion is `lambda_max <= G.maxDegree`.
+
+**Type context**: `A : Matrix (Fin n) (Fin n) ℝ` is a real matrix indexed by `Fin n`. The hypothesis `hA : A.IsSymm` asserts \(A = A^T\).
+
+## Proof idea in one paragraph
+The largest eigenvalue is bounded by the maximum absolute row sum (a standard lemma for eigenvalues). Each row sum is bounded by the number of neighbors, because each adjacent entry has absolute value at most 1 and each non-adjacent entry is 0. The neighbor count is the degree, which is at most the maximum degree. Chaining these inequalities gives the bound.
+
+## How the Lean proof is organized
+
+### 1. Use a general eigenvalue bound
+The proof starts with a lemma already in the library:
+
+```lean
+eigenvalue_le_max_row_sum A mu hmu
+```
+
+Here `hmu : Module.End.HasEigenvalue (Matrix.toLin' A) mu` is a proof that \(\mu\) is an eigenvalue of \(A\). The lemma returns an index \(i\) such that:
+\[
+|\mu| \leq \sum_j |A_{ij}|
+\]
+
+This is the standard "eigenvalue bounded by max row sum" inequality, a consequence of the Gershgorin circle theorem.
+
+### 2. Compare row sums to graph degree
+For that specific row `i`, the code proves
+
+```
+sum_j |A i j| <= sum_{j in G.neighborFinset i} 1
+```
+
+because of the hypothesis `h_adj`:
+
+- if `G.Adj i j`, then `|A i j| <= 1`
+- otherwise `|A i j| <= 0`
+
+So summing over all `j` is dominated by summing `1` over neighbors. This second sum is exactly the degree of `i`.
+
+### 3. Move from degree to maximum degree
+Finally, use the graph lemma
+
+```lean
+G.degree_le_maxDegree i
+```
+
+which gives
+
+```
+G.degree i <= G.maxDegree
+```
+
+Combining the inequalities yields
+
+```
+mu <= G.maxDegree
+```
+
+for any eigenvalue `mu`.
+
+### 4. Apply the bound to the largest eigenvalue
+The list `sorted_eigenvalues A hA` contains all eigenvalues. The proof shows every element of this list is bounded by `G.maxDegree`, so the last element (the maximum) is also bounded. The non-emptiness of the list is guaranteed by `hn : n != 0`.
+
+## Practical reading of the Lean code
+
+Key constructs:
+
+- `h_bound`: proves every eigenvalue `mu` is `<= G.maxDegree`.
+- `h_sorted`: lifts that bound to every element of `sorted_eigenvalues`.
+- `List.getLast_mem` plugs the bound into `lambda_max`.
+
+The only nontrivial steps are the sum estimate and the passage from an eigenvalue proof to the row-sum lemma. Those are handled by `eigenvalue_le_max_row_sum` and a short inequality chain using `simp` and `Finset.sum_le_sum`.
+
+## Why this is called a spectral radius bound
+For symmetric real matrices, the spectral radius equals the largest absolute eigenvalue, and the largest eigenvalue is the last element of the sorted list. Thus bounding `lambda_max` bounds the spectral radius as well.
+
+## Side note: Rayleigh quotient
+The file ends with a reminder:
+
+"The Rayleigh quotient of a vector x with respect to a matrix A is <x, Ax> / <x, x>."
+
+This is the classical tool for characterizing eigenvalues of symmetric matrices, and it is another route to the same bound. The Lean proof above uses a library lemma instead of explicitly working with the Rayleigh quotient.

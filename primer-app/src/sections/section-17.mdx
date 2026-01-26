@@ -1,0 +1,123 @@
+# Eigenvalue interlacing for principal submatrices
+
+This section formalizes a standard interlacing fact for symmetric matrices:
+
+> If you take a symmetric matrix `A` and restrict it to a principal submatrix `subA`
+> indexed by a nonempty set `S`, then the **largest eigenvalue** of `subA` is **at least**
+> the `(m-1)`-th eigenvalue of `A`, where `m = |S|`.
+
+In Lean, the lemma is called `eigenvalue_interlacing_max`.
+
+## The mathematical statement (informal)
+
+Let:
+
+- `A` be an `n x n` real symmetric matrix,
+- `S` be a nonempty subset of `{0,1,...,n-1}` with `m = |S|`,
+- `subA` be the principal submatrix of `A` indexed by `S`,
+- `evs_A` be the sorted list of eigenvalues of `A` (in nondecreasing order),
+- `evs_sub` be the sorted list of eigenvalues of `subA`.
+
+Then:
+
+```
+max_eigenvalue(subA) >= evs_A[m-1].
+```
+
+In the Lean lemma, `max_eigenvalue(subA)` is expressed as
+`evs_sub.getLast`.
+
+This is the "top-end" half of eigenvalue interlacing: the largest eigenvalue of a
+principal submatrix sits **above** the `(m-1)`-th eigenvalue of the full matrix.
+
+## How the proof works
+
+The proof is a clean application of the min-max principle (a.k.a. Courant–Fischer) plus
+a Rayleigh quotient comparison.
+
+### 1. The subspace of supported vectors
+
+Define a subspace `V` of `R^n` consisting of vectors supported on `S`:
+
+- entries outside `S` are zero,
+- dimension of `V` is `m = |S|`.
+
+In Lean this is `subspace_of_support S` and the dimension lemma is
+`subspace_of_support_dim S`.
+
+### 2. Min-max principle gives a lower bound
+
+The min-max principle says:
+
+```
+ev_A[m-1] <= sup_{x in V, x != 0} R_A(x)
+```
+
+where `R_A(x)` is the Rayleigh quotient of `A` at `x`.
+
+Lean encapsulates this with `le_sup_rayleigh_of_dim_eq_succ`.
+
+### 3. Rayleigh quotient is preserved on the submatrix
+
+For any nonzero `x` in `V`, you can compress it to a vector `y` in `R^m`
+by keeping only coordinates in `S`.
+
+Then:
+
+```
+R_A(x) = R_subA(y).
+```
+
+This is the technical heart of the proof: it matches the quadratic form
+of `A` on a supported vector with the quadratic form of the principal
+submatrix.
+
+In Lean this is the long lemma `h_rayleigh_eq`:
+
+- it builds a coordinate map from `x` to `y`,
+- shows the Rayleigh quotients agree.
+
+### 4. Rayleigh quotient is at most the max eigenvalue
+
+For symmetric matrices, the Rayleigh quotient is always bounded by the
+maximum eigenvalue:
+
+```
+R_subA(y) <= max_eigenvalue(subA).
+```
+
+Lean uses `rayleigh_le_max_eigenvalue` for this.
+
+### 5. Put it together
+
+Chaining all inequalities:
+
+```
+ev_A[m-1]
+  <= sup_{x in V} R_A(x)
+  =  sup_{y} R_subA(y)
+  <= max_eigenvalue(subA).
+```
+
+This yields the interlacing bound:
+
+```
+max_eigenvalue(subA) >= ev_A[m-1].
+```
+
+## Key Lean objects and lemmas
+
+- `principal_submatrix_fin A S`: principal submatrix indexed by `S`.
+- `principal_submatrix_fin_isSymm`: symmetry is preserved.
+- `sorted_eigenvalues A hA`: sorted eigenvalues list.
+- `subspace_of_support S`: vectors supported on `S`.
+- `le_sup_rayleigh_of_dim_eq_succ`: min-max inequality.
+- `rayleigh_le_max_eigenvalue`: Rayleigh quotient bounded by max eigenvalue.
+
+## Why this matters
+
+Interlacing is a core tool in spectral graph theory and matrix analysis.
+Here it is applied to principal submatrices, which correspond to restricting
+the quadratic form to a coordinate subspace. This lemma isolates the
+**maximum eigenvalue** bound that is later used to show large principal
+submatrices inherit large eigenvalues.

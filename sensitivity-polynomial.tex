@@ -1,0 +1,247 @@
+\documentclass{article}
+
+% Package organization and configuration
+\usepackage{amsthm, amsmath, amssymb, array, float, stackengine, appendix}
+\usepackage{tikz}
+\usepackage{mathtools}
+\usepackage{listings}
+\usepackage{color}
+% \usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+
+% TikZ libraries
+\usetikzlibrary{arrows, automata, positioning}
+
+% Math commands
+\newcommand{\sups}[1]{\ensuremath{^{\textrm{#1}}}}
+\newcommand{\subs}[1]{\ensuremath{_{\textrm{#1}}}}
+\newcommand{\mono}[1]{$\mathcal{M}_{#1}$}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\FF}{\mathbb{F}}
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\pcal}{\mathcal P}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\ZZ}{\mathbb{Z}}
+\newcommand{\two}{\left\{0, 1\right\}}
+\newcommand{\pred}{\mathcal{P}}
+\newcommand{\acz}{\text{AC}^0}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\replace}{\stackMath\mathbin{\stackinset{c}{0ex}{c}{0ex}{r}{\bigcirc}}}
+\newcommand{\zigzag}{\stackMath\mathbin{\stackinset{c}{0ex}{c}{0ex}{z}{\bigcirc}}}
+\newcommand{\xpar}{x_{||}}
+\newcommand{\xperp}{x_{\bot}}
+\newcommand{\lambar}{\overline{\lambda}}
+\newcommand{\Rot}{\textit{Rot}}
+\DeclareMathOperator*{\avg}{\text{avg}}
+% \newcommand\oast{\stackMath\mathbin{\stackinset{c}{0ex}{c}{0ex}{\ast}{\bigcirc}}}
+\newcommand{\fp}{\overline \FF_p}
+\newcommand{\val}{\text{val}}
+\newcommand{\sat}{\text{SAT}}
+\newcommand{\np}{\text{NP}}
+\newcommand{\unsat}{\text{UNSAT}}
+\newcommand{\pcp}{\text{PCP}}
+\newcommand{\csp}{\text{CSP}}
+\newcommand{\accz}{\text{ACC}^0}
+\newcommand{\polylog}{\text{polylog}}
+
+% Theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+\newtheorem{Col}{Corollary}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{claim}{Claim}
+
+\theoremstyle{plain}
+\newtheorem{fact}{Fact}
+\newtheorem{Th}{Theorem}
+\newtheorem{conj}{Conjecture}
+\newtheorem{problem}{Problem}
+\newtheorem{oproblem}{Open Problem}
+\newtheorem{remark}{Remark}
+
+% Repeatable theorem references
+\makeatletter
+\newtheorem*{rep@theorem}{\rep@title}
+\newcommand{\newreptheorem}[2]{%
+\newenvironment{rep#1}[1]{%
+ \def\rep@title{#2 \ref{##1}}%
+ \begin{rep@theorem}}%
+ {\end{rep@theorem}}}
+\makeatother
+
+\newreptheorem{theorem}{Theorem}
+\newreptheorem{lemma}{Lemma}
+\newreptheorem{Col}{Corollary}
+
+% Listings configuration
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{
+    frame=tb,
+    language=Python,
+    aboveskip=3mm,
+    belowskip=3mm,
+    showstringspaces=false,
+    columns=flexible,
+    basicstyle={\small\ttfamily},
+    numbers=none,
+    numberstyle=\tiny\color{gray},
+    keywordstyle=\color{blue},
+    commentstyle=\color{dkgreen},
+    stringstyle=\color{mauve},
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=3
+}
+
+% Math operators
+\DeclareMathOperator{\argmin}{argmin}
+\DeclareMathOperator{\argmax}{argmax}
+\DeclareMathOperator{\poly}{poly}
+
+% Document settings
+\hyphenation{op-tical net-works semi-conduc-tor}
+\pagenumbering{arabic}
+
+% Definition environment macros
+\newcommand{\defnpart}[1]{\textbf{#1:}\quad}
+\newcommand{\defnname}[1]{\textbf{Name:}\quad#1}
+
+\newenvironment{complexdef}[2][]{%
+    \begin{definition}[#1]%
+    \if\relax\detokenize{#2}\relax\else
+        \defnname{#2}\\[\baselineskip]% Force line break and add vertical space
+    \fi
+}{%
+    \end{definition}
+}
+
+\begin{document}
+\title{Lecture 11: Sensitivity is polynomial in degree}%
+\author{Pepe Swer}% <-this % stops a space
+\date{Presented 2025 Sep 17}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+%\boldmath
+Presenting \cite{Huang19}. A boolean function of degree $n$ has sensitivity at least $\sqrt n$.
+\end{abstract}
+
+\section{Fourier analysis}
+A function $f : 2^n \rightarrow 2$ is called a boolean function. We will often use $S, x$ interchangeably for vectors/sets of indices from $[n]$. Define $\chi_S(x) := (-1)^{x \cdot S}$.
+
+It turns out that these $\chi$ are an orthogonal basis for the space of boolean functions. Indeed, $\EE(\chi_S) = 0$ unless $S = \emptyset$, and $\chi_S \cdot \chi_T = \chi_{S \Delta T}$. This means every function can be expressed as a "polynomial" and we can talk about the "degree" of a function.
+
+\section{Cauchy interlace}
+\begin{lemma}\label{cauchy}
+    If $A$ has real eigenvalues (or is Hermitian?) then the $k^{th}$ eigenvalue is given by
+\[
+    \lambda_k = \max_C \min_{\norm{x} = 1, x \in C} \langle Ax, x \rangle
+\]
+where $C$ is any $k$-dimensional subspace.
+\end{lemma}
+\begin{proof}
+    <3-axis to represent $\RR^n$, squares labeled $C, D$ overlapping along strip in the middle. Vector along the strip labeled $e_k$.>
+    
+    Let $D$ be the space spanned by the $n-k+1$ smallest eigenvectors. This intersects $C$ in dimension at least 1. Along the intersection, the function $\langle Ax, x \rangle$ is at most $\lambda_k$. Choosing $C$ to be the space spanned by the top $k$ eigenvectors gives equality.
+\end{proof}
+
+Note that we can also choose two of (use $-A$) or (flip min and max) or (get the smallest eigenvalue).
+
+\begin{lemma}
+    Given an $n \times (n - 1)$ orthogonal projection matrix $P$, let $B := PAP^*$. Let $\alpha_i, \beta_i$ be the eigenvalues of $A, B$ in increasing order.
+\[
+    \alpha_i \le \beta_i \le \alpha_{i+1}
+\]
+\end{lemma}
+\begin{proof}
+    <Lefthand picture: 3-axis to represent $\RR^{n-1}$, square labeled $C = PD$. Righthand picture: 3-axis to represent $\RR^n$, parallelogram to represent $D$.>
+    
+    Let $C \subseteq \RR^{n-1}$ be the eigenvalue-minimum dimension $i$ subspace, e.g. the span of $\{\beta_i\}_{i \in [k]}$. Pick $D \subseteq \RR^n$ for which $P D = C$. Then
+    \begin{align}
+        \beta_i &= \max_{\norm{x} = 1, x \in C} \langle Bx, x \rangle \\
+        &= \max_{\norm{x} = 1, x \in D} \langle PAP^* x, x \rangle \\
+        &= \max_{\norm{x} = 1, x \in D} \langle AP^* x, P^* x \rangle \\
+        &= \max_{\norm{x} = 1, x \in C \subseteq \RR^n} \langle Ax, x \rangle \\
+        &\ge \alpha_i
+    \end{align}
+    Similarly, we can bound $\beta_i$ from above with $C' \subseteq \RR^{n-1}$ and $D' \subseteq \RR^n$, both of dimension $n - i$, so that $P D' = C'$. When this subspace is eigenvalue-maximum, it bounds $\alpha_{i+1}$ from below.
+\end{proof}
+
+\section{Sensitivity}
+We say $f$ is sensitive at $x$ to position $i$ if changing the $i^{th}$ bit of $x$ changes the value of $f$. That is $f(x_{i \rightarrow x_i + 1}) \neq f(x)$. The sensitivity of $f$ overall is the number of sensitive positions for the worst $x$.
+
+We can start to look at this as a graph and write $x \sim y$ if they differ in only 1 bit. We call this graph $Q_n$.
+\[
+s(f) := \max_{x} |\{y \mid x \sim y, f(x) \neq y\}|
+\]
+It is also helpful to have $\deg(f) = n$. To do this, pick a term $T$ in $f$ of maximum degree and restrict to the subcube $Q_T$. Now we have a simple problem on the graph above by flipping the value of $f$ by the parity of $x$ and looking for places where neighboring vertices get the same value. I.e., let $g(x) := f(x) \chi_{[n]}$. Then we can let $S := \{x \mid g(x) = 1\}$ and sensitivity becomes simply
+\[
+s(f) = \max(d_S(g), d_{Q_n \setminus S}(g))
+\]
+
+\subsection{Lemmas}
+\begin{lemma}
+    $\EE(g) \neq 0$
+\end{lemma}
+\begin{proof}
+    The transformation $f \rightarrow g$ is a bijection between the monomials of $f$ and $g$. The monomial 1 in $g$ comes from the monomial $\chi_{[n]}$ in $f$, which we know has a nonzero coefficient. $\EE(g)$ is simply this coefficient.
+\end{proof}
+
+While it's annoying to calculate the eigenvalues of $Q_n$, here's a related graph with simple eigenvalues.
+
+\begin{align}
+    A_1 = B_1 &:=
+        \begin{pmatrix}
+        0 & 1 \\
+        1 & 0
+        \end{pmatrix} &
+    A_{n+1} &:= \begin{pmatrix}
+        A_n & I_{2^n} \\
+        I_{2^n} & -A_n
+        \end{pmatrix} &
+    B_{n+1} &:= \begin{pmatrix}
+        B_n & I_{2^n} \\
+        I_{2^n} & B_n
+        \end{pmatrix}
+\end{align}
+
+Notice that $B_n$ is the adjacency matrix of $Q_n$, and $A_n$ is the same, but we flipped $\frac {n2^n + 2 \cdot 2^n} {4(n+1)2^n + 4 \cdot 2^n} = \frac 1 4$ of the entries.
+\begin{lemma}
+    Half the eigenvalues of $A_n$ are $\sqrt n$ and half are $- \sqrt n$.
+\end{lemma}
+\begin{proof}
+    By induction, $A_n^2 = n I_{2^n}$ so every eigenvalue is $\pm \sqrt n$ Furthermore, $\text{Tr}(A_n) = 0$ so there must be equal numbers of each.
+\end{proof}
+
+\subsection{Main proof}
+\begin{theorem}
+    $|s(f)| \ge \sqrt {\deg(f)}$.
+\end{theorem}
+\begin{proof}
+    Let $H_1$ be the adjacency matrix of $(Q_n)_S$. It is obtained by deleting some rows and the corresponding columns of the matrix for $B_n$. Then $\lambda_1(H_1) \le d_S(g)$ because the weight of a row is at most $d_S(g)$.
+    
+    If we negate entries of $H_1$ appropriately we obtain some $H_2$, a submatrix of $A_n$. By the same argument, $\lambda_1(H_2) < d_S(g)$. Furthermore, by lemma \ref{cauchy}, $\lambda_1(H_2) > \lambda_{2^{n-1}}(A_n) = \sqrt n$.
+\end{proof}
+
+\begin{thebibliography}{9}
+\bibitem{GL90}
+Craig Gotsman, Nathan Linial 1990 - The equivalence of two problems on the cube
+\url{https://www.sciencedirect.com/science/article/pii/0097316592900608}
+\bibitem{Huang19}
+Hao Huang 2019 - Induced subgraphs of hypercubes and a proof of the Sensitivity Conjecture
+\url{https://arxiv.org/abs/1907.00847}
+\end{thebibliography}
+
+\appendix
+
+\end{document}

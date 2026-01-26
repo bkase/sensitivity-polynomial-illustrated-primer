@@ -1,0 +1,135 @@
+# Section 9: Sorted Eigenvalues and Interlacing
+
+This section introduces a few Lean definitions and lemmas that set up a web-style treatment of eigenvalue ordering and the classic interlacing pattern. The code is short, but it lays key groundwork: how to sort eigenvalues, how to express interlacing as a list property, and how symmetry ties to Hermitian structure.
+
+## 1. Sorting eigenvalues from the characteristic polynomial
+
+```lean
+noncomputable def sorted_eigenvalues_list {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) : List ℝ :=
+  (A.charpoly.roots).sort (· ≤ ·)
+```
+
+**Idea.** A matrix has a characteristic polynomial `A.charpoly`, whose roots are the eigenvalues (with multiplicity). The definition above collects those roots into a list and then sorts them using the usual order `≤` on real numbers.
+
+**Why `noncomputable`?** Extracting roots from a polynomial over `ℝ` is not computable in Lean's constructive sense. The definition is still valid mathematically, but it must be marked `noncomputable`.
+
+**Takeaway.** `sorted_eigenvalues_list A` is a sorted list of the eigenvalues of `A`, coming directly from the characteristic polynomial.
+
+## 2. Interlacing as a list predicate
+
+```lean
+/--
+A predicate asserting that list M interlaces list L.
+-/
+def interlacing (L M : List ℝ) : Prop :=
+  L.length = M.length + 1 ∧
+  ∀ i : Fin M.length, L[i]! ≤ M[i]! ∧ M[i]! ≤ L[i.1 + 1]!
+```
+
+**Definition.** The predicate says:
+
+- `L` has one more element than `M`.
+- Each element of `M` lies between consecutive elements of `L`.
+
+Concretely, if `L = [λ₀, λ₁, ..., λₙ]` and `M = [μ₀, ..., μ_{n-1}]`, then
+
+```
+λ₀ ≤ μ₀ ≤ λ₁ ≤ μ₁ ≤ ... ≤ λ_{n-1} ≤ μ_{n-1} ≤ λₙ.
+```
+
+**Lean indexing details.**
+- `L[i]!` means "the `i`-th entry of `L`", using `get!` (which is safe here because the lengths line up).
+- `i : Fin M.length` is a finite index guaranteed to be in bounds.
+
+This is the standard formalization of interlacing for ordered lists.
+
+## 3. Symmetric vs. Hermitian (over `ℝ`)
+
+```lean
+/--
+A real matrix is symmetric if and only if it is Hermitian.
+-/
+theorem isSymm_iff_isHermitian_real {n : Type*} [Fintype n] (A : Matrix n n ℝ) :
+  A.IsSymm ↔ A.IsHermitian := by
+  rw [Matrix.IsSymm, Matrix.IsHermitian, Matrix.conjTranspose, Matrix.transpose]
+  simp
+  rfl
+```
+
+**Idea.** In real matrices, conjugate transpose is just transpose, so "Hermitian" is the same as "symmetric." The proof unfolds definitions and simplifies.
+
+This lemma is crucial because many spectral theorems in mathlib are stated for Hermitian matrices, but we want to apply them to symmetric real matrices.
+
+## 4. Sorted eigenvalues for symmetric matrices
+
+```lean
+/--
+The sorted eigenvalues of a symmetric matrix.
+-/
+noncomputable def sorted_eigenvalues {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) : List ℝ :=
+  let hA' : A.IsHermitian := (isSymm_iff_isHermitian_real A).mp hA
+  (List.ofFn (hA'.eigenvalues)).mergeSort (· ≤ ·)
+```
+
+**Idea.** For symmetric (Hermitian) matrices, mathlib gives a function `eigenvalues` that returns the eigenvalues as a function `Fin n → ℝ`. We convert this function to a list using `List.ofFn` and sort with `mergeSort`.
+
+- `hA'` is the same matrix, but typed as Hermitian.
+- `mergeSort` produces a sorted list of length `n`.
+
+This definition is the "canonical" sorted eigenvalue list for symmetric real matrices.
+
+## 5. Length of the sorted eigenvalue list
+
+```lean
+/--
+The number of sorted eigenvalues is n.
+-/
+theorem sorted_eigenvalues_length {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
+  (sorted_eigenvalues A hA).length = n := by
+    unfold sorted_eigenvalues; aesop;
+```
+
+**Idea.** The list produced from `Fin n → ℝ` has exactly `n` entries. After sorting, the length is preserved, so the result remains `n`.
+
+The proof uses `aesop` to discharge the bookkeeping automatically.
+
+## 6. Symmetry and the dot product
+
+```lean
+/--
+For a symmetric matrix A, <Ax, y> = <x, Ay>.
+-/
+theorem dotProduct_mulVec_symm {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) (x y : Fin n → ℝ) :
+  dotProduct (A.mulVec x) y = dotProduct x (A.mulVec y) := by
+    simp +decide [ Matrix.mulVec, dotProduct, mul_comm ];
+    simp +decide only [Finset.mul_sum _ _ _, mul_left_comm, mul_comm];
+    rw [ Finset.sum_comm ];
+    conv_rhs => rw [ ← hA ] ;
+    rfl
+```
+
+**Idea.** Symmetric matrices are self-adjoint, so they can "move" between slots of the dot product. This lemma is a concrete dot-product identity that is frequently used when proving variational characterizations of eigenvalues.
+
+The proof is a sequence of algebraic rewrites: expand the dot product, commute sums, and use the symmetry `hA` to swap indices.
+
+## 7. Where this is headed
+
+The file ends with a comment marker:
+
+```lean
+/--
+The max-min value for the k-th eigenvalue.
+-/
+```
+
+This indicates the next step: a max-min (or min-max) characterization of eigenvalues (the Courant--Fischer theorem). With the definitions here, one can state and prove interlacing results for eigenvalues of principal submatrices or rank-one updates.
+
+## Summary
+
+- `sorted_eigenvalues_list` sorts roots of the characteristic polynomial.
+- `interlacing` formalizes the classic eigenvalue interlacing pattern.
+- `isSymm_iff_isHermitian_real` bridges symmetric and Hermitian worlds.
+- `sorted_eigenvalues` extracts eigenvalues of symmetric matrices and sorts them.
+- `sorted_eigenvalues_length` and `dotProduct_mulVec_symm` are foundational lemmas for variational principles.
+
+These pieces form the Lean infrastructure for talking about ordered eigenvalues and their interlacing behavior.

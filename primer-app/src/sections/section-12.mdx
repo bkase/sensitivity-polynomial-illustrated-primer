@@ -1,0 +1,78 @@
+# Section 12: Reindexed Huang Matrix and Symmetry
+
+This section introduces a convenient reindexing of the Huang matrix so that its rows and columns are indexed by `Fin (2^n)` instead of boolean functions `Fin n -> Bool`. It then proves that both the original and reindexed Huang matrices are symmetric. The main ideas are:
+
+- Build an explicit equivalence between boolean functions and `Fin (2^n)`.
+- Use `Matrix.reindex` to transport the Huang matrix across that equivalence.
+- Prove symmetry for the original matrix by induction on `n`.
+- Conclude symmetry for the reindexed matrix by rewriting via the equivalence.
+
+## 1. Reindexing boolean functions to `Fin (2^n)`
+
+```lean
+def boolFunEquivFin (n : ℕ) : (Fin n → Bool) ≃ Fin (2^n) :=
+  (Fintype.equivFin (Fin n → Bool)).trans (finCongr (by
+  norm_num [ Fintype.card_pi ]))
+```
+
+**What this does:**
+- `Fintype.equivFin` produces an equivalence between any finite type and `Fin (card _)`.
+- `Fin n -> Bool` has cardinality `2^n`. The proof uses `Fintype.card_pi` and `norm_num` to simplify the count.
+- `finCongr` adjusts the `Fin` index to exactly `Fin (2^n)`.
+
+So `boolFunEquivFin n` is the canonical bridge between boolean functions on `n` bits and the `2^n` sized `Fin` type.
+
+## 2. The reindexed Huang matrix
+
+```lean
+noncomputable def huang_matrix_fin (n : ℕ) : Matrix (Fin (2^n)) (Fin (2^n)) ℝ :=
+  Matrix.reindex (boolFunEquivFin n) (boolFunEquivFin n) (huang_matrix n)
+```
+
+`Matrix.reindex` transports a matrix along equivalences of row and column indices. Here we use the same equivalence for rows and columns, so we are simply relabeling the indices, not changing any numeric entries.
+
+This gives a version of the Huang matrix whose index type matches the usual `2^n x 2^n` dimension found in linear algebra statements.
+
+## 3. The original Huang matrix is symmetric
+
+```lean
+theorem huang_matrix_isSymm (n : ℕ) : (huang_matrix n).IsSymm := by
+  induction' n with n ih;
+  · exact rfl
+  · -- By definition of huang_matrix, we know that huang_matrix (n + 1) is a block matrix ...
+    have h_block : huang_matrix (n + 1) = Matrix.reindex (finSuccEquiv_huang_custom n).symm
+      (finSuccEquiv_huang_custom n).symm
+      (Matrix.fromBlocks (huang_matrix n) (1 : Matrix (Fin n → Bool) (Fin n → Bool) ℝ)
+        (1 : Matrix (Fin n → Bool) (Fin n → Bool) ℝ) (-huang_matrix n)) := by
+      rfl;
+    simp_all +decide [ Matrix.IsSymm ];
+    ext i j; simp +decide [ Matrix.fromBlocks_transpose, ih ] ;
+```
+
+**Key idea:** the matrix for `n+1` is built as a block matrix (with `huang_matrix n` and `-huang_matrix n` on the diagonal, and identities off-diagonal), then reindexed to match the boolean hypercube structure. The proof:
+
+- Proceeds by induction on `n`.
+- For `n = 0`, symmetry is `rfl`.
+- For `n + 1`, it unfolds the block structure and uses the inductive hypothesis that `huang_matrix n` is symmetric.
+- `simp` with `Matrix.fromBlocks_transpose` shows the block matrix is symmetric.
+
+This is the structural heart of the symmetry result.
+
+## 4. Symmetry survives reindexing
+
+```lean
+theorem huang_matrix_fin_isSymm (n : ℕ) : (huang_matrix_fin n).IsSymm := by
+  exact funext fun i => funext fun j => huang_matrix_isSymm n |>.apply _ _
+```
+
+A reindexing does not change the entries, only the labels. The proof simply reduces symmetry of the reindexed matrix to symmetry of the original by expanding definitions.
+
+In other words, symmetry is invariant under relabeling of indices by equivalence.
+
+## 5. Takeaway
+
+- `boolFunEquivFin` is the bridge from boolean function indices to `Fin (2^n)`.
+- `huang_matrix_fin` is a pure reindexing, so algebraic properties such as symmetry carry over immediately.
+- The core symmetry proof relies on the block decomposition of the Huang matrix and an induction on dimension.
+
+If you want to connect this to linear algebra over finite-dimensional real vector spaces, `huang_matrix_fin` is the version with the standard `2^n x 2^n` index type, and `huang_matrix_fin_isSymm` confirms it is symmetric in the usual sense.

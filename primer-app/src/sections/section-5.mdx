@@ -1,0 +1,136 @@
+# Section 5: Type Equivalences for the Huang Matrix Indexing
+
+This section defines three explicit type equivalences in Lean. They are not just abstract conveniences: they are exactly the "index bookkeeping" needed to describe the recursive block structure of the Huang matrix when rows/columns are indexed by Boolean hypercube vertices.
+
+Below is what each definition does, how it works, and why it matters for the Huang matrix.
+
+---
+
+## 1) `boolProdEquivSum_custom` : `Bool × α ≃ α ⊕ α`
+
+**Lean definition**
+```lean
+def boolProdEquivSum_custom {α : Type*} : Bool × α ≃ α ⊕ α where
+  toFun := fun p => if p.1 then Sum.inr p.2 else Sum.inl p.2
+  invFun := fun s => match s with
+    | Sum.inl a => (false, a)
+    | Sum.inr a => (true, a)
+  left_inv := by
+    rintro ⟨ _ | _, _ ⟩ <;> simp +decide
+  right_inv := by
+    rintro (a | a) <;> rfl
+```
+
+### What it means
+- A pair `(b, a)` with `b : Bool` and `a : α` can be seen as **"choose left or right copy of α"** depending on `b`.
+- Thus `Bool × α` is equivalent to `α ⊕ α` (a sum of two copies of `α`).
+
+### How it works
+- **Forward map**: send `(true, a)` to `Sum.inr a` and `(false, a)` to `Sum.inl a`.
+- **Inverse map**: send `Sum.inl a` back to `(false, a)`, and `Sum.inr a` back to `(true, a)`.
+- The proofs `left_inv` and `right_inv` show these two functions undo each other.
+
+### Why it matters
+When you split the Boolean hypercube by the first coordinate, every vertex is "either in the 0-slice or the 1-slice." The sum type `α ⊕ α` captures exactly this "either/or" split, which is perfect for block matrices: the two summands correspond to two diagonal blocks.
+
+---
+
+## 2) `finSuccEquiv_custom` : `(Fin (n+1) → α) ≃ α × (Fin n → α)`
+
+**Lean definition**
+```lean
+def finSuccEquiv_custom (n : ℕ) (α : Type*) : (Fin (n + 1) → α) ≃ α × (Fin n → α) where
+  toFun f := (f 0, f ∘ Fin.succ)
+  invFun p := Fin.cons p.1 p.2
+  left_inv f := by
+    ext i
+    refine Fin.cases ?_ ?_ i <;> simp
+  right_inv p := by
+    ext <;> simp
+```
+
+### What it means
+- A function `f : Fin (n+1) → α` is completely determined by:
+  1) its value at `0`, and
+  2) its values on the remaining indices `{1, …, n}` (which are in bijection with `Fin n`).
+- So such a function is equivalent to a pair `(α, Fin n → α)`.
+
+### How it works
+- **Forward map**: `f ↦ (f 0, f ∘ Fin.succ)`.
+  - `Fin.succ : Fin n → Fin (n+1)` is the canonical injection that maps `i` to `i+1`.
+  - So `f ∘ Fin.succ` is the "tail" of `f`, giving values at indices `1, 2, ..., n`.
+- **Inverse map**: `Fin.cons p.1 p.2` rebuilds a function from a head value `p.1` and tail `p.2`.
+  - `Fin.cons : α → (Fin n → α) → (Fin (n+1) → α)` prepends a head to a tail.
+- The proof uses `Fin.cases` to split the index into "zero" vs. "successor."
+
+### Why it matters
+Vertices of the Boolean hypercube of dimension `n+1` are functions `Fin (n+1) → Bool`. This equivalence lets you pull out the first coordinate explicitly as a separate piece. It is the fundamental "peel off the first bit" operation.
+
+---
+
+## 3) `finSuccEquiv_huang_custom` : `(Fin (n+1) → Bool) ≃ (Fin n → Bool) ⊕ (Fin n → Bool)`
+
+**Lean definition**
+```lean
+def finSuccEquiv_huang_custom (n : ℕ) : (Fin (n + 1) → Bool) ≃ (Fin n → Bool) ⊕ (Fin n → Bool) :=
+  Equiv.trans
+    (finSuccEquiv_custom n Bool)
+    (boolProdEquivSum_custom)
+```
+
+### What it means
+This simply **composes** the previous two equivalences:
+1) First, split a Boolean function on `Fin (n+1)` into `(Bool, Fin n → Bool)`.
+2) Then turn `(Bool, Fin n → Bool)` into a sum of two copies of `Fin n → Bool`.
+
+So we get a clean equivalence:
+
+```
+(Fin (n+1) → Bool)  ≃  (Fin n → Bool) ⊕ (Fin n → Bool)
+```
+
+**Summand ordering convention**: The composition sends:
+- `(false, tail)` to `Sum.inl tail` — the "left" or "top" block
+- `(true, tail)` to `Sum.inr tail` — the "right" or "bottom" block
+
+This means vertices with first coordinate `false` go to `Sum.inl`, and vertices with first coordinate `true` go to `Sum.inr`. This ordering determines which block of the matrix corresponds to which summand.
+
+`Equiv.trans` composes equivalences: if `e₁ : A ≃ B` and `e₂ : B ≃ C`, then `Equiv.trans e₁ e₂ : A ≃ C`.
+
+### Why it matters for the Huang matrix
+The Huang matrix `A_n` is indexed by Boolean hypercube vertices, i.e.
+
+```
+indices_n := Fin n → Bool
+```
+
+The recursion for `A_{n+1}` is a **block matrix** with four `2^n × 2^n` blocks:
+
+- top-left: `A_n`
+- top-right: `I`
+- bottom-left: `I`
+- bottom-right: `-A_n`
+
+To even *state* this block structure in Lean, you must identify the index set for dimension `n+1` with **two copies** of the index set for dimension `n`.
+
+That is exactly what `finSuccEquiv_huang_custom` gives you:
+
+```
+indices_{n+1}  ≃  indices_n ⊕ indices_n
+```
+
+Once you have this equivalence, you can:
+- reindex rows and columns of `A_{n+1}` into "upper" and "lower" halves,
+- align those halves with the two copies of `indices_n`, and
+- express the recursion as a block matrix in a type-correct way.
+
+Without this explicit equivalence, the block recursion is only informal. With it, Lean can treat `A_{n+1}` as a matrix indexed by a sum type and accept the block decomposition.
+
+---
+
+## Summary
+- `boolProdEquivSum_custom` turns a Boolean choice into a sum type.
+- `finSuccEquiv_custom` peels off the first coordinate of a function on `Fin (n+1)`.
+- `finSuccEquiv_huang_custom` combines both to split the Boolean hypercube into two copies of the `n`-dimensional hypercube.
+
+This is precisely the indexing trick needed to define the Huang matrix recursion as a block matrix in Lean.

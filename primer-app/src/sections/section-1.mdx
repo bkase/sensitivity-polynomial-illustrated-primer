@@ -1,0 +1,107 @@
+# Generalizing proofs in Lean: `Harmonic.GeneralizeProofs`
+
+This section defines a customized version of Mathlib’s `generalize_proofs` tactic. The goal of the tactic is to **remove proof-term dependencies from definitional equality** by turning those proofs into explicit arguments. In large formalizations (like the Sensitivity Conjecture), this prevents Lean from getting stuck on “the same proposition, but different proof objects,” and makes rewriting and definitional reduction far more robust.
+
+Below is a guided tour of what the code does and why it matters.
+
+## Big picture: what `generalize_proofs` does
+
+Lean’s definitional equality treats proofs as data. When you build terms that depend on a proof (for example, a dependent `Subtype`, `Finset` membership proof, or a lemma packaged into a structure), the *exact proof term* can affect whether two expressions are definitionally equal. Two mathematically identical proofs can still be different terms, and that can block rewriting or `simp` from closing a goal.
+
+`generalize_proofs` fixes this by:
+
+1. Scanning a term (the goal or selected hypotheses).
+2. Finding proof terms that occur inside it.
+3. Abstracting those proofs into fresh variables.
+4. Replacing the original proof terms with those variables.
+
+After the tactic, your goal is definitionally equal to a version that no longer hardcodes those proof objects. This makes subsequent transformations and rewrites *proof-irrelevant in practice*, even when Lean’s kernel still distinguishes proof terms.
+
+## Walkthrough of the implementation
+
+### 1. `mkLambdaFVarsUsedOnly'`
+```lean
+-- Like Mathlib’s helper, but keeps all fvars (usedOnly := false).
+def mkLambdaFVarsUsedOnly' (fvars : Array Expr) (e : Expr) : MetaM (Array Expr × Expr)
+```
+This function wraps an expression in lambdas over a list of free variables, but **does not drop “unused” binders** (`usedOnly := false`). This is crucial when abstracting proofs: a proof might be needed for type-checking even if it is not syntactically referenced after reduction. Keeping all binders avoids accidentally losing dependencies.
+
+### 2. `abstractProofs'`
+```lean
+partial def abstractProofs' (e : Expr) (ty? : Option Expr) : MAbs Expr
+```
+This is the main traversal. It walks the expression tree and, whenever it encounters a proof term, it:
+
+- Beta-reduces and normalizes the proof.
+- Lambda-abstracts over the current local proof variables.
+- Stores the generalized proof term in an internal cache (`MAbs.insertProof`).
+- Replaces the original proof occurrence with an application of the generalized proof to the local proof variables.
+
+The result is an expression where each proof is “lifted out” and can be introduced as a fresh hypothesis later.
+
+Two key details:
+
+- **`config.maxDepth`**: limits recursion for performance; beyond that, it leaves the term as-is.
+- **`config.abstract`**: if false and a proof depends on locals, it won’t be abstracted. This preserves behavior in sensitive contexts.
+
+### 3. `withGeneralizedProofs'`
+```lean
+partial def withGeneralizedProofs' {α} ... (e : Expr) (ty? : Option Expr)
+    (k : Array Expr → Array Expr → Expr → MGen α) : MGen α
+```
+This wraps `abstractProofs'` and **materializes** the generalizations as new local hypotheses:
+
+- It runs `abstractProofs'` to collect the proof terms that should be abstracted.
+- For each collected proof type, it creates a new local hypothesis.
+- It replaces proof occurrences in the expression with those new fvars.
+
+The callback `k` then receives:
+
+- `fvars`: the new proof variables introduced,
+- `pfs`: the generalized proof terms (as lambda-expressions),
+- `e'`: the updated expression with abstracted proofs.
+
+### 4. `generalizeProofsCore'`
+```lean
+partial def generalizeProofsCore'
+    (g : MVarId) (fvars rfvars : Array FVarId) (target : Bool)
+```
+This is the core tactic logic. It:
+
+1. Reverts the selected hypotheses (or all hypotheses if `location` is `*`).
+2. Re-introduces them one-by-one.
+3. While re-introducing, it runs `withGeneralizedProofs'` on each type to generalize proofs inside the binder type.
+4. Optionally generalizes proofs in the **target** (if `target = true`).
+
+There’s also a specialized path for let-bound proofs and proof hypotheses already in the context (`propToFVar`) to reuse existing proof variables rather than introduce duplicates.
+
+### 5. `generalizeProofs'` and the elaborator
+```lean
+elab (name := generalizeProofsElab'') "generalize_proofs" ...
+```
+This installs the tactic so it behaves like Mathlib’s `generalize_proofs`, but uses the modified helpers above. You can call it as:
+
+- `generalize_proofs` — generalize proofs in all hypotheses and the target.
+- `generalize_proofs at h1 h2` — only in specific hypotheses.
+- `generalize_proofs at *` — all hypotheses.
+
+The optional binder identifiers let you name the newly introduced proof variables.
+
+## Why this matters for the Sensitivity Conjecture proof
+
+The Sensitivity Conjecture formalization involves deep chains of dependent definitions—finite sets, subtypes, and structures whose fields contain proof objects (e.g., membership proofs, bound proofs, and proof-carrying indices). In such environments:
+
+- Many expressions are **definitionally equal only if their internal proof terms match exactly**.
+- Rewriting and simplification can get stuck because proof terms differ even though the propositions are equivalent.
+- Tactics that rely on definitional equality (like `simp`, `cases`, `rfl`, or automation) can fail unexpectedly or create fragile proof scripts.
+
+`Harmonic.GeneralizeProofs.generalize_proofs` eliminates these issues by **making those proof terms explicit parameters**. Once a proof is an argument rather than hidden inside a definition, Lean stops requiring exact proof-term equality to reduce or rewrite. In practice, this makes the large, compositional steps in the Sensitivity Conjecture proof *stable and predictable*.
+
+### Intuition in one sentence
+You can think of `generalize_proofs` as “proof-irrelevance on demand”: it rewrites a goal so that the proof objects stop mattering for definitional equality, which is exactly what you want in a long, dependent proof like the Sensitivity Conjecture.
+
+## Minimal example (conceptual)
+
+Suppose you have a term that depends on two different proofs of the same fact. Those proofs are not definitionally equal, so rewriting fails. After `generalize_proofs`, both are replaced by a fresh variable, and definitional equality no longer cares which proof was used.
+
+This is precisely the kind of technical friction the Sensitivity Conjecture proof would otherwise face repeatedly.

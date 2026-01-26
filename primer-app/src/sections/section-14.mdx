@@ -1,0 +1,95 @@
+# Section 14: Adjacency and Row-Sum Bounds
+
+This section has two themes:
+
+1. The Huang matrix has entries whose **absolute values** match the adjacency matrix of the hypercube.
+2. Any eigenvalue of a real matrix is bounded in absolute value by the **maximum absolute row sum**.
+
+We'll walk through both statements and how the Lean proofs are structured.
+
+---
+
+## 1. Absolute values give the hypercube adjacency
+
+### Statement
+
+```lean
+theorem abs_huang_eq_adjacency (n : ℕ) (i j : Fin n → Bool) :
+  |huang_matrix n i j| =
+    if (Finset.filter (fun k => i k ≠ j k) Finset.univ).card = 1
+    then 1 else 0 := by
+  ...
+```
+
+Interpretation:
+
+- The vertices of the `n`-dimensional hypercube are functions `Fin n → Bool`.
+- Two vertices `i` and `j` are adjacent exactly when they differ in **one** coordinate.
+- The proof shows that the absolute value of the Huang matrix entry is `1` precisely in that case, and `0` otherwise.
+
+So `|huang_matrix n|` is the adjacency matrix of the hypercube.
+
+### Proof idea
+
+The proof is by induction on `n`. There are two main ingredients:
+
+1. **Base case (`n = 0`)**: There is only one vertex. The proof is done by case analysis on the only possible indices.
+2. **Inductive step**: The Huang matrix for size `n+2` is defined in a block form
+   ```lean
+   [  A   1
+      1  -A ]
+   ```
+   after reindexing. This induces a split into two cases based on whether the first coordinates agree:
+   - If `i 0 = j 0`, the entry reduces to the corresponding entry of the smaller Huang matrix.
+   - If `i 0 ≠ j 0`, the entry comes from a `1` block, but only when the remaining coordinates are identical.
+
+The proof formalizes this with a split lemma `h_split` that matches this block structure.
+Then it rewrites the "differ in exactly one coordinate" condition to separate the first coordinate from the rest. The cardinality calculation is then handled by `simp` and `Finset.card` lemmas.
+
+---
+
+## 2. Eigenvalues bounded by max absolute row sum
+
+### Statement
+
+```lean
+theorem eigenvalue_le_max_row_sum {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (μ : ℝ)
+  (hμ : Module.End.HasEigenvalue (Matrix.toLin' A) μ) :
+  ∃ i : Fin n, |μ| ≤ Finset.sum Finset.univ (fun j => |A i j|) := by
+  ...
+```
+
+Interpretation:
+
+- If `μ` is an eigenvalue of `A`, then there exists a row `i` whose absolute row sum bounds `|μ|`.
+- This is a standard norm estimate: the spectral radius is bounded by the max row sum norm.
+
+### Proof idea
+
+The proof follows the textbook argument:
+
+1. **Pick an eigenvector** `v` with `A.mulVec v = μ • v`.
+2. **Choose an index** `i` where `|v i|` is maximal (this is done via `Finset.exists_max_image`).
+3. **Compare absolute values**:
+   ```lean
+   |μ * v i| = |(A.mulVec v) i| = |∑ j, A i j * v j|
+   ≤ ∑ j, |A i j| * |v j|
+   ≤ ∑ j, |A i j| * |v i|
+   ```
+4. If `|v i| = 0`, then `v = 0`, which contradicts the eigenvector being nonzero. So we can divide by `|v i|` and obtain the desired bound on `|μ|`.
+
+In Lean, the proof is structured around these steps:
+
+- `obtain ⟨v, hv⟩` extracts a nonzero eigenvector.
+- `obtain ⟨i, hi⟩` chooses the maximal coordinate.
+- `h_bound` proves the inequality on `|μ * v i|` using `abs_sum_le_sum_abs` and the maximality of `|v i|`.
+- The final argument shows `|v i| > 0` and rearranges the inequality to isolate `|μ|`.
+
+---
+
+## Takeaway
+
+- The first theorem identifies the **combinatorial structure** of the Huang matrix: its absolute values encode hypercube adjacency.
+- The second theorem gives a **spectral bound**: any eigenvalue is controlled by the maximum absolute row sum.
+
+Together, these results make it possible to translate combinatorial properties of the hypercube into spectral bounds on the Huang matrix.

@@ -1,0 +1,273 @@
+/* Custom prose styling for the primer aesthetic */
+.primer-text {
+  font-family: "Georgia", "Times New Roman", serif;
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+}
+
+.primer-heading {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.primer-code {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.875em;
+  background: #f5e6d3;
+  padding: 0.125em 0.375em;
+  border-radius: 0.25em;
+}
+
+/* Animated decorative borders */
+.primer-border {
+  border: 2px solid #d4a574;
+  position: relative;
+}
+
+.primer-border::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  border: 1px solid #d4a574;
+  pointer-events: none;
+}
+
+/* Interactive element hover states */
+.interactive-node {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.interactive-node:hover {
+  transform: scale(1.1);
+  filter: brightness(1.1);
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar - thin style */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 165, 116, 0.5);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 165, 116, 0.8);
+}
+
+/* Animation keyframes */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* MDX Content Styles */
+.mdx-content {
+  font-family: "Georgia", "Times New Roman", serif;
+  line-height: 1.8;
+  color: #292524;
+}
+
+.mdx-content h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #1c1917;
+}
+
+.mdx-content h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: #292524;
+}
+
+.mdx-content h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: #44403c;
+}
+
+.mdx-content p {
+  margin-bottom: 0.75rem;
+}
+
+.mdx-content ul, .mdx-content ol {
+  margin-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.mdx-content ul {
+  list-style-type: disc;
+}
+
+.mdx-content ol {
+  list-style-type: decimal;
+}
+
+.mdx-content li {
+  margin-bottom: 0.25rem;
+}
+
+.mdx-content code {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.875em;
+  background: #f5e6d3;
+  padding: 0.125em 0.375em;
+  border-radius: 0.25em;
+  color: #8b4513;
+}
+
+.mdx-content pre {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.875em;
+  background: #f5e6d3;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+
+.mdx-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.mdx-content blockquote {
+  border-left: 3px solid #d4a574;
+  padding-left: 1rem;
+  margin-left: 0;
+  color: #57534e;
+  font-style: italic;
+}
+
+.mdx-content strong {
+  font-weight: 600;
+  color: #1c1917;
+}
+
+.mdx-content em {
+  font-style: italic;
+}
+
+.mdx-content a {
+  color: #8b4513;
+  text-decoration: underline;
+}
+
+.mdx-content a:hover {
+  color: #d4a574;
+}
+
+/* Math block styling */
+.mdx-content .math-block {
+  text-align: center;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.mdx-content .katex-display {
+  margin: 0.5rem 0;
+  overflow-x: auto;
+}
+
+/* Highlight.js theme - warm primer style for Lean code */
+.hljs {
+  background: #faf6f0;
+  color: #3c3836;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+  border: 1px solid #e8dcc8;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name {
+  color: #9d0006;
+  font-weight: 600;
+}
+
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-title.class_ {
+  color: #b57614;
+}
+
+.hljs-function .hljs-title,
+.hljs-title.function_ {
+  color: #076678;
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable {
+  color: #427b58;
+}
+
+.hljs-string,
+.hljs-doctag {
+  color: #79740e;
+}
+
+.hljs-number,
+.hljs-literal {
+  color: #8f3f71;
+}
+
+.hljs-comment {
+  color: #928374;
+  font-style: italic;
+}
+
+.hljs-meta {
+  color: #af3a03;
+}
+
+.hljs-symbol,
+.hljs-bullet {
+  color: #076678;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}

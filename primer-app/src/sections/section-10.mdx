@@ -1,0 +1,121 @@
+# Section 10: Min–Max Eigenvalues and Spectral Theory (Lean Walkthrough)
+
+This section defines the min–max eigenvalue of a real symmetric matrix and proves two key spectral facts:
+
+- the list of sorted eigenvalues is just a permutation of the (unsorted) eigenvalues, and
+- there is an orthonormal eigenbasis aligned with the sorted eigenvalues.
+
+We also record that the Euclidean inner product is the same as `dotProduct` in Lean.
+
+Throughout, `A : Matrix (Fin n) (Fin n) ℝ` is a real matrix and `hA : A.IsSymm` means `A` is symmetric.
+
+---
+
+## 1. The min–max eigenvalue (Rayleigh–Ritz form)
+
+Lean definition:
+
+```lean
+def min_max_eigenvalue {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (k : ℕ) : ℝ :=
+  ⨆ (C : Submodule ℝ (Fin n → ℝ)) (_ : Module.finrank ℝ C = k + 1),
+    ⨅ (x : {x : C // dotProduct (x : Fin n → ℝ) (x : Fin n → ℝ) = 1}),
+      dotProduct (A.mulVec (x : Fin n → ℝ)) (x : Fin n → ℝ)
+```
+
+**What this means** (mathematically):
+
+- You look at all subspaces `C` of dimension `k+1`.
+- In each subspace, you take the **minimum** of the Rayleigh quotient over unit vectors `x` in `C`.
+- Then you take the **maximum** of those minima over all such subspaces.
+
+This is the classical min–max characterization of the `k`-th eigenvalue for symmetric matrices.
+
+Key Lean ideas:
+
+- `⨆` and `⨅` are `iSup` and `iInf`, the supremum and infimum operators.
+- `Module.finrank ℝ C = k + 1` enforces the subspace dimension.
+- The unit sphere in `C` is encoded as a subtype `x : {x : C // dotProduct x x = 1}`.
+- The Rayleigh quotient is just `dotProduct (A.mulVec x) x` for real symmetric matrices.
+
+---
+
+## 2. Sorted eigenvalues are a permutation of eigenvalues
+
+Lemma (paraphrased):
+
+> The list `sorted_eigenvalues A hA` is a permutation of the standard eigenvalue list of `A`.
+
+Lean statement:
+
+```lean
+lemma sorted_eigenvalues_is_perm {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
+  ∃ σ : Equiv.Perm (Fin n), ∀ (i : Fin n),
+    (sorted_eigenvalues A hA).get ⟨i, ...⟩ =
+    Matrix.IsHermitian.eigenvalues ((isSymm_iff_isHermitian_real A).mp hA) (σ i)
+```
+
+There exists a permutation `σ : Equiv.Perm (Fin n)` that maps the sorted eigenvalues to the standard eigenvalue list.
+
+**Proof idea**:
+
+1. `sorted_eigenvalues` is defined as a merge sort of the eigenvalues list, so it is a permutation.
+2. A generic lemma shows: if two lists are permutations, then there is a bijection between their indices that matches entries.
+3. That bijection is transported to a permutation of `Fin n` using length equalities.
+
+**Why this matters**:
+
+This gives a precise index map `σ` so you can connect the *sorted* eigenvalue list to the *original* eigenvalue list. It is a technical bridge for reindexing eigenvectors.
+
+---
+
+## 3. Orthonormal basis aligned to the sorted eigenvalues
+
+Lemma (paraphrased):
+
+> There is an orthonormal basis `v` of eigenvectors such that the eigenvalue of `v i` is exactly the `i`-th sorted eigenvalue.
+
+Lean statement:
+
+```lean
+lemma exists_orthonormal_basis_sorted {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
+  ∃ (v : OrthonormalBasis (Fin n) ℝ (EuclideanSpace ℝ (Fin n))),
+    ∀ i, A.mulVec (v i) =
+      ((sorted_eigenvalues A hA).get ⟨i, ...⟩) • (v i)
+```
+
+Here `•` is scalar multiplication in the vector space.
+
+**Proof idea**:
+
+1. The spectral theorem already provides an orthonormal eigenbasis indexed by the *unsorted* eigenvalues.
+2. Using the permutation `σ` from the previous lemma, reindex that basis so the `i`-th basis vector corresponds to the `i`-th sorted eigenvalue.
+3. The lemma uses `v.reindex σ.symm` to align the ordering.
+
+**Takeaway**:
+
+For symmetric matrices, not only do eigenvalues exist and are real, but you can order them and still have an orthonormal basis of eigenvectors in that order.
+
+---
+
+## 4. Inner product equals dot product
+
+Lean lemma:
+
+```lean
+lemma inner_eq_dotProduct {n : ℕ} (x y : EuclideanSpace ℝ (Fin n)) :
+  inner ℝ x y = dotProduct (x : Fin n → ℝ) (y : Fin n → ℝ) := by
+    simp +decide [ dotProduct, inner ];
+    ac_rfl
+```
+
+This is a small but important bridge: `EuclideanSpace` in mathlib is defined using the dot product on functions `Fin n → ℝ`. The lemma tells Lean (and the reader) that the abstract inner product agrees with the concrete dot product formula.
+
+---
+
+## How these pieces fit together
+
+- The **min–max eigenvalue** definition uses the Rayleigh quotient, which relies on the **dot product**.
+- The **permutation lemma** formalizes that sorted eigenvalues are just a reordering of the standard list.
+- The **orthonormal basis lemma** uses that permutation to reorder eigenvectors so each basis vector matches the sorted eigenvalue at the same index.
+
+Altogether, this section is a Lean formalization of the spectral theorem framework needed for min–max eigenvalue proofs.

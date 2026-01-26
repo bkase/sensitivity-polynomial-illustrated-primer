@@ -1,0 +1,111 @@
+# Section 8: Eigenvalues of the Huang Matrix
+
+This section proves a clean characterization of the eigenvalues of the Huang matrix. The key idea is that the matrix squares to a scalar multiple of the identity. From that, any eigenvalue must satisfy a simple quadratic equation.
+
+## The Lean statement
+
+```lean
+theorem huang_matrix_eigenvalues {n : ℕ} {μ : ℝ}
+  (h : Module.End.HasEigenvalue (Matrix.toLin' (huang_matrix n)) μ) :
+  μ ^ 2 = n := by
+  ...
+```
+
+Read this as: for any natural number `n` and real number `μ`, if `μ` is an eigenvalue of the linear map corresponding to `huang_matrix n`, then `μ^2 = n`.
+
+`Matrix.toLin'` coerces a matrix into a linear map.
+
+## Mathematical idea
+
+Let `A` be the Huang matrix. The earlier lemma `huang_matrix_sq n` says
+
+```
+A^2 = n I.
+```
+
+If `v` is an eigenvector for eigenvalue `μ`, then
+
+```
+A v = μ v.
+```
+
+Apply `A` again:
+
+```
+A^2 v = A (A v) = A (μ v) = μ (A v) = μ (μ v) = μ^2 v.
+```
+
+But `A^2 = n I`, so
+
+```
+A^2 v = n v.
+```
+
+Therefore
+
+```
+μ^2 v = n v.
+```
+
+Since `v` is a nonzero eigenvector, we can cancel `v` and conclude
+
+```
+μ^2 = n.
+```
+
+This is exactly what the theorem states: every eigenvalue must be a square root of `n` (over the reals, this means `μ = ±√n`).
+
+## How the Lean proof mirrors the math
+
+### 1) Extract an eigenvector
+
+```lean
+obtain ⟨ v, hv ⟩ := h.exists_hasEigenvector;
+```
+
+From `HasEigenvalue`, we get an eigenvector `v` with proof `hv` that it is nonzero and satisfies the eigenvector equation.
+
+### 2) Apply the squared matrix identity
+
+```lean
+have h_sq : (Matrix.toLin' (huang_matrix n)) (Matrix.toLin' (huang_matrix n) v)
+  = (n : ℝ) • v := by
+  convert congr_arg (fun x => x.mulVec v) <| huang_matrix_sq n using 1;
+  · simp +decide [sq];
+  · simp +decide [Matrix.smul_eq_diagonal_mul];
+```
+
+Here the proof applies the matrix identity `A^2 = n I` to the vector `v`. The `convert` step rewrites the identity in the form needed for `mulVec`, and `simp` handles the algebraic reshaping.
+
+### 3) Use the eigenvector equation
+
+```lean
+have h_eigen : (Matrix.toLin' (huang_matrix n)) v = μ • v := by
+  cases hv; aesop;
+```
+
+This is the direct eigenvector equation `A v = μ v`.
+
+### 4) Combine both and cancel the vector
+
+```lean
+simp_all +decide [sq];
+exact smul_left_injective _ hv.2 <| by
+  simpa [mul_assoc, smul_smul] using h_sq;
+```
+
+After rewriting, Lean shows `μ^2 • v = n • v`. The lemma `smul_left_injective` lets us cancel the nonzero vector `v` (the nonzero proof is `hv.2`), leaving `μ^2 = n`.
+
+## Takeaway
+
+The eigenvalues of the Huang matrix are completely determined by its squaring relation:
+
+```
+A^2 = n I  =>  μ^2 = n.
+```
+
+So eigenvalues are characterized by the equation `μ^2 = n`. This is the standard algebraic pattern: if a matrix squares to a scalar multiple of the identity, every eigenvalue squares to that scalar.
+
+---
+
+*(The comment at the end hints at defining the sorted list of eigenvalues as the sorted roots of the characteristic polynomial, but the proof here focuses only on the equation `μ^2 = n`.)*

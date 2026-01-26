@@ -1,0 +1,165 @@
+# Final theorem: sensitivity_conjecture
+
+This section proves the final statement of the sensitivity conjecture in the Boolean setting:
+
+```lean
+theorem sensitivity_conjecture {n : ℕ} (f : (Fin n → Bool) → Bool) :
+  (sensitivity f : ℝ) ≥ Real.sqrt (degree f)
+```
+
+In mathematical notation:
+\[
+s(f) \geq \sqrt{\deg(f)}
+\]
+
+**Fourier basis convention**: Throughout this project, we use the \(\{0,1\}\)-valued encoding for Boolean functions (see **Section 4**). The Fourier degree is defined using the parity characters \(\chi_S\) (see **Section 3**).
+
+The proof is a clean chain of earlier lemmas. Below is a walkthrough of the ideas and how the Lean proof stitches them together.
+
+---
+
+## Goal and strategy
+
+We want to show the sensitivity of any Boolean function is at least the square root of its Fourier degree. The proof splits into two cases:
+
+1. `degree f = 0` (constant function): then the inequality is trivial.
+2. `degree f ≠ 0`: find a top-degree Fourier coefficient, restrict to that support so the full coefficient is nonzero, deduce the restricted function has degree equal to the number of variables, apply a degree-to-sensitivity lower bound, then lift back to the original function using monotonicity under restriction.
+
+The proof is essentially:
+
+```
+sensitivity f
+  >= sensitivity (restriction f S z)
+  >= sqrt (degree (restriction f S z))
+  =  sqrt (degree f)
+```
+
+---
+
+## Step-by-step explanation
+
+### 1) Case split on \(\deg(f) = 0\)
+
+Lean starts with:
+
+```lean
+cases eq_or_ne (degree f) 0 <;> simp_all +decide
+```
+
+**Why the degree-0 case is trivial**: If \(\deg(f) = 0\), then \(\sqrt{\deg(f)} = 0\). Since sensitivity is always \(\geq 0\) (it's a natural number), the inequality \(s(f) \geq 0\) holds trivially.
+
+**What degree 0 means**: A function has \(\deg(f) = 0\) if and only if all Fourier coefficients \(\hat{f}(S)\) with \(|S| \geq 1\) are zero. This means \(f\) depends only on the empty set of variables, i.e., \(f\) is a **constant function**. Constant functions have sensitivity 0.
+
+The rest of the proof assumes \(\deg(f) \neq 0\), i.e., \(f\) is non-constant.
+
+### 2) Choose a maximal-support nonzero Fourier coefficient
+
+The degree is defined as the maximum cardinality of a subset `S` with nonzero Fourier coefficient `fourier_coeff f S`.
+
+The proof unfolds the definition and uses finite set arguments to pick an `S` with:
+
+- `fourier_coeff f S ≠ 0`
+- `S.card` is maximal among those with nonzero coefficient
+
+Lean uses `Set.exists_max_image` after establishing finiteness of the set of such `S`. This yields:
+
+```
+∃ k, k = degree f ∧ ∃ S, S.card = k ∧ fourier_coeff f S ≠ 0
+```
+
+This is the "there is a top-degree coefficient" step.
+
+### 3) Restrict to the top-degree support
+
+Using the lemma `exists_restriction_fourier_coeff_univ_ne_zero`, we select a restriction `z` such that for the restricted function
+
+```
+ g = restriction f S z
+```
+
+the Fourier coefficient at the full set is nonzero:
+
+```
+fourier_coeff g Finset.univ ≠ 0
+```
+
+Intuitively: after fixing all variables outside `S`, the coefficient on the remaining variables becomes the top coefficient of the restricted function.
+
+### 4) Degree of the restricted function is exactly `|S|`
+
+Now the lemma `degree_eq_n_of_fourier_coeff_univ_ne_zero` applies:
+
+```
+ degree (restriction f S z) = S.card
+```
+
+Because the "full set" coefficient is nonzero, the restricted function has full degree on its remaining variables.
+
+### 5) Sensitivity lower bound in the full-degree case
+
+Earlier we proved:
+
+```
+sensitivity_ge_sqrt_degree_of_degree_eq_n
+```
+
+This gives:
+
+```
+sensitivity (restriction f S z) ≥ sqrt (degree (restriction f S z))
+```
+
+Combine with the degree equality from Step 4 to get a lower bound in terms of `S.card`.
+
+### 6) Lift the bound back to the original function
+
+Restrictions cannot increase sensitivity, so:
+
+```
+sensitivity f ≥ sensitivity (restriction f S z)
+```
+
+This is exactly `sensitivity_restriction_le` (casted to `ℝ` in the proof).
+
+### 7) Finish with arithmetic and rewriting
+
+The final line `grind` closes the goal by chaining the inequalities and rewriting `S.card = degree f`.
+
+---
+
+## How the pieces fit together
+
+- **Fourier degree** is characterized by the largest subset `S` with a nonzero Fourier coefficient.
+- **Restriction** focuses on that subset and turns its coefficient into the `univ` coefficient of the restricted function.
+- **Full-degree sensitivity bound** shows that for any function whose top coefficient is at `univ`, sensitivity is at least `sqrt degree`.
+- **Monotonicity of sensitivity under restriction** lets us transfer the bound back to the original function.
+
+That chain is exactly the proof structure in Lean.
+
+---
+
+## Lean proof outline (annotated)
+
+```
+cases eq_or_ne (degree f) 0 <;> simp_all +decide
+-- pick top-degree Fourier coefficient
+obtain ⟨k, hk⟩ : ∃ k, k = degree f ∧ ∃ S, S.card = k ∧ fourier_coeff f S ≠ 0 := by
+  unfold degree; ...
+-- restrict so univ coefficient is nonzero
+obtain ⟨S, hS_card, hS_fourier⟩ := hk.2
+obtain ⟨z, hz⟩ : ∃ z, fourier_coeff (restriction f S z) Finset.univ ≠ 0 := by
+  exact exists_restriction_fourier_coeff_univ_ne_zero f S hS_fourier
+-- degree of restriction is full
+have h_deg_g : degree (restriction f S z) = S.card := by
+  have := degree_eq_n_of_fourier_coeff_univ_ne_zero _ hz; aesop
+-- sensitivity bound on restricted function
+have h_sens_g : (sensitivity (restriction f S z) : ℝ) ≥ Real.sqrt (degree (restriction f S z)) := by
+  have := sensitivity_ge_sqrt_degree_of_degree_eq_n (restriction f S z); aesop
+-- sensitivity monotonicity under restriction
+have h_sens_f : (sensitivity f : ℝ) ≥ (sensitivity (restriction f S z) : ℝ) := by
+  exact_mod_cast sensitivity_restriction_le f S z
+-- finish
+ grind
+```
+
+This completes the formal proof of the sensitivity conjecture in the project.

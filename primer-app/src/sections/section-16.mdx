@@ -1,0 +1,130 @@
+# Rayleigh quotient and Courant-Fischer (Lean walkthrough)
+
+This section introduces the Rayleigh quotient, the Courant-Fischer min-max characterization, and several supporting lemmas about eigenvalues of symmetric matrices. The Lean code works with real symmetric matrices and vectors indexed by `Fin n`.
+
+## Rayleigh quotient
+
+The Rayleigh quotient of a matrix `A` and a nonzero vector `x` is
+
+```
+R_A(x) = (x^T A x) / (x^T x).
+```
+
+In Lean:
+
+```lean
+def rayleigh_quotient {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (x : Fin n → ℝ) : ℝ :=
+  dotProduct x (A.mulVec x) / dotProduct x x
+```
+
+Key properties used later:
+
+- **Reindexing invariance.** If you change coordinates by a bijection of indices, the Rayleigh quotient is unchanged.
+- **Zero padding and principal submatrices.** If you embed a vector supported on a subset `S` into the full space (padding with zeros outside `S`), its Rayleigh quotient with respect to `A` matches the Rayleigh quotient of the corresponding principal submatrix.
+
+These facts let you compare eigenvalue information between a matrix and its principal submatrices.
+
+## Courant-Fischer (inf-sup) definition
+
+The Courant-Fischer min-max principle characterizes the `k`-th eigenvalue as a min over subspaces of a max of the Rayleigh quotient. The Lean definition in this file is the **inf-sup** form:
+
+```lean
+def courant_fischer_inf_sup {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (k : Fin n) : ℝ :=
+  ⨅ (V : Submodule ℝ (Fin n → ℝ)) (_ : Module.finrank ℝ V = k + 1),
+    ⨆ (x : {x : V // x.1 ≠ 0}), rayleigh_quotient A x.1
+```
+
+Read it as:
+
+- take all subspaces `V` of dimension `k + 1`,
+- for each `V` take the supremum of `R_A(x)` over nonzero `x` in `V`,
+- then take the infimum of those suprema.
+
+## Eigenbasis expansion and Rayleigh bounds
+
+Much of the section expands vectors in an orthonormal eigenbasis and uses the sorted eigenvalues. The core idea:
+
+If
+
+```
+x = sum_i c_i v_i
+```
+
+with `v_i` orthonormal eigenvectors, then
+
+```
+R_A(x) = (sum_i c_i^2 * lambda_i) / (sum_i c_i^2).
+```
+
+This immediately implies:
+
+- **Upper bound by the largest eigenvalue.** If `x != 0`, then `R_A(x) <= lambda_max`.
+- **Lower bound on a top-eigenspace span.** If `x` lives in the span of eigenvectors indexed `i >= k`, then `R_A(x) >= lambda_k`.
+
+In Lean this appears as:
+
+- `rayleigh_le_max_eigenvalue` for the upper bound.
+- `rayleigh_ge_of_mem_span_top` for the lower bound on the top-eigenspace span.
+
+Both proofs expand `x` in the orthonormal eigenbasis given by `exists_orthonormal_basis_sorted` and use monotonicity of the sorted eigenvalues.
+
+## Dimension arguments and nontrivial intersection
+
+To apply Courant-Fischer, we need a nonzero vector in the intersection of two subspaces. There are two related lemmas:
+
+1. **Intersection dimension is positive.**
+   If `U` has dimension `n - k` and `V` has dimension `k + 1` in an `n`-dimensional space, then `U ∩ V` is nontrivial.
+
+2. **Specialized intersection for eigenvector spans.**
+   In `le_sup_rayleigh_of_dim_eq_succ`, the code defines
+   `U = span {v_i | i >= k}`.
+   Since `dim U = n - k` and `dim V = k + 1`, the intersection contains a nonzero vector `x`.
+
+This nonzero `x` is used to show that for any `V` of dimension `k+1`, the supremum of the Rayleigh quotient on `V` is at least `lambda_k`.
+
+## Courant-Fischer inequality (one direction)
+
+The lemma
+
+```lean
+le_sup_rayleigh_of_dim_eq_succ
+```
+
+proves the key inequality:
+
+```
+lambda_k <= sup_{x in V, x != 0} R_A(x)
+```
+
+for every `V` with `dim V = k + 1`. The proof is:
+
+- pick a nonzero `x` in `U ∩ V` using the dimension argument,
+- apply `rayleigh_ge_of_mem_span_top` to get `R_A(x) >= lambda_k`,
+- conclude `lambda_k <= sup_{x in V} R_A(x)`.
+
+This is the "inf-sup" half of Courant-Fischer.
+
+## Principal submatrices
+
+The file defines principal submatrices and reindexing:
+
+```lean
+def principal_submatrix {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (S : Finset (Fin n)) : Matrix S S ℝ :=
+  A.submatrix Subtype.val Subtype.val
+
+
+def principal_submatrix_fin {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (S : Finset (Fin n)) :
+  Matrix (Fin (Fintype.card {x // x ∈ S})) (Fin (Fintype.card {x // x ∈ S})) ℝ :=
+  Matrix.reindex (Fintype.equivFin {x // x ∈ S}) (Fintype.equivFin {x // x ∈ S}) (principal_submatrix A S)
+```
+
+There is a lemma that the reindexed principal submatrix remains symmetric if `A` is symmetric. This supports eigenvalue comparisons between a matrix and its principal submatrices using the Rayleigh quotient with zero-padded vectors.
+
+## Takeaways
+
+- The Rayleigh quotient is the core numerical bridge between vectors and eigenvalues.
+- Reindexing and zero-padding allow precise transfer between submatrices and the original matrix.
+- The Courant-Fischer min-max principle uses dimension arguments to guarantee vectors in intersections of subspaces.
+- In Lean, these ideas appear as lemmas about reindexing, spans, finrank, and eigenbasis expansions.
+
+If you want to extend this section, the next natural step is to formalize the full equality of Courant-Fischer (both directions), and then derive interlacing inequalities for eigenvalues of principal submatrices.

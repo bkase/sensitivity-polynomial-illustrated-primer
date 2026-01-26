@@ -1,0 +1,131 @@
+# Section 4: Fourier Coefficients, Degree, and Sensitivity
+
+This section introduces two definitions in Lean:
+
+```lean
+noncomputable def fourier_coeff {n : ℕ} (f : (Fin n → Bool) → Bool) (S : Finset (Fin n)) : ℝ :=
+  (Finset.sum Finset.univ (fun x => (if f x then 1 else 0) * chi S x)) / 2^n
+
+noncomputable def degree {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
+  Finset.sup (Finset.filter (fun S => fourier_coeff f S ≠ 0) Finset.univ) Finset.card
+```
+
+The `noncomputable` keyword tells Lean this definition relies on classical choice or real-number operations that are not algorithmically computable.
+
+---
+
+## 1. Boolean functions as real‑valued functions
+
+A Boolean function `f : (Fin n → Bool) → Bool` takes an `n`‑bit input and returns a Boolean output. The Fourier analysis of Boolean functions usually works with real‑valued functions, so the code converts the output to a real number using:
+
+```lean
+(if f x then 1 else 0)
+```
+
+This maps `false ↦ 0` and `true ↦ 1`. (Sometimes the literature uses `{-1, +1}` instead; here we stick to `{0,1}` because that's exactly what the code does.)
+
+---
+
+## 2. Fourier coefficients in the code
+
+### The definition
+
+```lean
+fourier_coeff f S =
+  (sum over all x) ((if f x then 1 else 0) * chi S x) / 2^n
+```
+
+This is the average value of `f(x) * chi_S(x)` over all inputs `x`.
+
+### What is `chi S x`?
+
+`chi S x` is the parity character defined in **Section 3**:
+
+```lean
+chi S x = (-1)^{|{i ∈ S : x i = true}|}
+```
+
+It returns `+1` if an even number of coordinates in `S` are true, and `-1` if odd. This is the standard Fourier basis function for Boolean analysis.
+
+### Expectation interpretation
+
+The Fourier coefficient is the expectation of `f(x) · χ_S(x)` under the uniform distribution:
+
+```
+fourier_coeff f S = 𝔼_x[f(x) · χ_S(x)] = (1/2^n) · Σ_{x ∈ {0,1}^n} f(x) · χ_S(x)
+```
+
+where `f(x)` is treated as 0 or 1 (the `{0,1}` encoding). This measures how much `f` "aligns" with the parity pattern on `S`.
+
+---
+
+## 3. Degree from Fourier support
+
+The second definition uses the Fourier coefficients to define the **degree**:
+
+```lean
+degree f =
+  sup (card S) over all S with fourier_coeff f S ≠ 0
+```
+
+In words:
+
+- Look at every subset `S` of variables.
+- Keep only those where the Fourier coefficient is nonzero.
+- Take the maximum size of such a set.
+
+This is exactly the **Fourier degree**: the largest subset size for which the Fourier expansion has a non‑zero coefficient.
+
+**Convention for edge cases**: If `f` is the constant zero function, then all Fourier coefficients are zero, and `Finset.sup` over an empty set returns `0` (the lattice bottom for `ℕ`). So the constant zero function has degree 0. The constant one function has `fourier_coeff f ∅ = 1 ≠ 0` and all other coefficients zero, so it also has degree 0.
+
+### Intuition
+
+- Low degree means the function is well‑approximated by small‑interaction terms (few variables at a time).
+- High degree means the function needs large, global parity patterns to describe it.
+
+---
+
+## 4. Connection to sensitivity
+
+**Sensitivity** measures how many single‑bit flips can change the function's value at a given input. For a Boolean function `f`, the sensitivity at input `x` counts how many coordinates `i` satisfy:
+
+```
+  f(x) ≠ f(x with bit i flipped)
+```
+
+The maximum of that count over all `x` is the sensitivity of `f`.
+
+### Why Fourier degree matters
+
+Fourier analysis provides a powerful bridge between algebraic structure and combinatorial measures like sensitivity:
+
+- A nonzero Fourier coefficient on a large set `S` means the function depends (in a parity sense) on many variables at once.
+- That kind of global dependence tends to force the function to be sensitive to bit flips.
+
+More concretely:
+
+- If a function has **high Fourier degree**, then there must be some input where many variables matter. That often implies higher sensitivity.
+- Conversely, if the function has very low sensitivity everywhere, the Fourier expansion tends to concentrate on small sets, leading to low degree.
+
+This is the basic intuition behind the **Sensitivity Conjecture** (now a theorem, proved by Huang 2019):
+
+**Theorem (Sensitivity Conjecture)**: For any Boolean function `f : {0,1}^n → {0,1}`,
+```
+sensitivity(f) ≥ √(degree(f))
+```
+
+This says that high Fourier degree implies high sensitivity. The Lean formalization in this project proves exactly this inequality. The converse direction (`degree(f) ≤ sensitivity(f)^2`) is easier and was known earlier; together they show that sensitivity and degree are polynomially related.
+
+---
+
+## 5. Takeaway
+
+- `fourier_coeff f S` is the normalized correlation of `f` with the parity character on `S`.
+- `degree f` is the maximum size of a subset with a nonzero Fourier coefficient.
+- High degree captures global interactions among many variables.
+- Sensitivity captures how fragile `f` is to individual bit flips.
+- Fourier degree and sensitivity are tightly linked, making Fourier analysis a natural tool for studying sensitivity.
+
+---
+
+If you want, the next step is to look at how `chi S x` is defined in the Lean code and how the `{0,1}` output encoding compares to the more common `{−1,+1}` normalization—this will clarify constants and sign conventions in later lemmas.

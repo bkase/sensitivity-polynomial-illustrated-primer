@@ -1,0 +1,105 @@
+# Sensitivity Monotonicity Under Restriction
+
+This section proves the key monotonicity fact: **restricting a function cannot increase its sensitivity**. This lemma is the bridge that lets us transfer sensitivity bounds from restricted functions back to the original.
+
+## The Lemma
+
+```lean
+lemma sensitivity_restriction_le {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (S : Finset (Fin n)) (z : Fin n → Bool) :
+  sensitivity (restriction f S z) ≤ sensitivity f
+```
+
+In plain language: the sensitivity of the restricted function is at most the sensitivity of the original function.
+
+## Why it's true: intuition
+
+Recall from **Section 22** that `restriction f S z` is a function on \(\{0,1\}^{|S|}\), where we fix coordinates outside \(S\) to the values in \(z\).
+
+**Key observation about Hamming distance**: In the restricted space \(\{0,1\}^{|S|}\), two inputs \(y, y'\) are neighbors (Hamming distance 1) if they differ in exactly one coordinate of \(S\). This corresponds exactly to neighbors in the full space \(\{0,1\}^n\) that:
+- Differ in exactly one coordinate
+- That coordinate is in \(S\)
+- Both inputs agree with \(z\) outside \(S\)
+
+So the restricted space has **fewer** neighbors to consider (only flips within \(S\)), not more.
+
+Every input \(y \in \{0,1\}^{|S|}\) to the restricted function corresponds to a full input \(x \in \{0,1\}^n\), obtained by:
+\[
+x_i = \begin{cases} y_j & \text{if } i \text{ is the } j\text{-th element of } S \\ z_i & \text{if } i \notin S \end{cases}
+\]
+
+Since the restriction only explores a subset of inputs and a subset of bit flips, it cannot create more sensitive directions than the original function already had.
+
+## Proof structure in Lean
+
+The Lean proof formalizes this intuition by:
+
+### 1. Unfold sensitivity as a supremum
+
+Recall that sensitivity is defined as:
+
+```lean
+def sensitivity (f : (Fin n → Bool) → Bool) : ℕ :=
+  Finset.sup Finset.univ (fun x =>
+    (Finset.filter (fun y => hammingDist x y = 1 ∧ f x ≠ f y) Finset.univ).card)
+```
+
+So we need to show that the supremum over the restricted domain is at most the supremum over the full domain.
+
+### 2. Map restricted inputs to full inputs
+
+For each restricted input `y`, construct the corresponding full input `x` by combining `y` on `S` with `z` outside `S`. This is the inverse of the restriction operation.
+
+### 3. Show sensitive neighbors inject
+
+The key step is constructing an **injection** from sensitive neighbors of \(y\) in the restricted domain to sensitive neighbors of \(x\) in the full domain.
+
+Let \(y' \in \{0,1\}^{|S|}\) be a sensitive neighbor of \(y\) for the restricted function, meaning:
+- \(y'\) differs from \(y\) in exactly one coordinate \(j \in S\)
+- \((\text{restriction } f\, S\, z)(y) \neq (\text{restriction } f\, S\, z)(y')\)
+
+Construct \(x' \in \{0,1\}^n\) by: keeping \(z\) outside \(S\), and using \(y'\) on \(S\).
+
+Then \(x'\) differs from \(x\) in exactly one coordinate (the same \(j\)), and by definition of restriction:
+\[
+f(x) = (\text{restriction } f\, S\, z)(y) \neq (\text{restriction } f\, S\, z)(y') = f(x')
+\]
+
+So \(x'\) is a sensitive neighbor of \(x\) for \(f\). This map \(y' \mapsto x'\) is injective because distinct \(y'\) give distinct \(x'\).
+
+### 4. Apply cardinality comparison
+
+Since there's an injection from sensitive neighbors in the restricted domain to sensitive neighbors in the full domain:
+
+```lean
+(restricted sensitive neighbors at y).card ≤ (sensitive neighbors at x).card
+```
+
+Taking the supremum over all `y` and noting that each maps to some `x`:
+
+```lean
+sup_y (restricted sensitivity at y) ≤ sup_x (sensitivity at x)
+```
+
+This gives the desired inequality.
+
+## Why this matters for the main proof
+
+This monotonicity lemma is crucial in the final argument:
+
+1. We find a top-degree Fourier coefficient at some set `S`.
+2. We restrict to `S` so that the restricted function has full degree equal to `|S|`.
+3. We apply the "full-degree implies large sensitivity" bound to the restricted function.
+4. We use `sensitivity_restriction_le` to lift this bound back to the original function:
+
+```
+sensitivity f ≥ sensitivity (restriction f S z) ≥ √(degree (restriction f S z)) = √(degree f)
+```
+
+Without monotonicity, we couldn't transfer the bound from the restriction to the original function.
+
+## Takeaways
+
+- Sensitivity is monotone under restriction: it can only stay the same or decrease.
+- The Lean proof mirrors the combinatorial argument by building an explicit injection from restricted sensitive neighbors to original sensitive neighbors.
+- This lemma is the key bridge between the full-degree case (where spectral methods give bounds) and the general case (arbitrary Boolean functions).

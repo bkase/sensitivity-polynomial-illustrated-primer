@@ -1,0 +1,160 @@
+# Section 2: Sensitivity in Lean
+
+This section defines the *sensitivity* of a Boolean function — the central concept in the Sensitivity Conjecture.
+
+## What sensitivity measures
+
+For a Boolean function \(f : \{0,1\}^n \to \{0,1\}\), the **sensitivity** of `f` is the maximum, over all inputs `x`, of how many single-bit flips change the output. Informally:
+
+- Fix an input `x`.
+- Flip exactly one coordinate to get a neighbor `y`.
+- Count how many such neighbors change `f`'s value.
+- Sensitivity is the maximum of that count over all `x`.
+
+So sensitivity measures how locally "fragile" the function is: if many one-bit changes flip the output, `f` is highly sensitive at that input.
+
+## The Lean definition
+
+The code in this section is:
+
+```lean
+def sensitivity {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
+  Finset.sup Finset.univ (fun x =>
+    Finset.card
+      (Finset.filter
+        (fun y =>
+          (Finset.card (Finset.filter (fun i => x i ≠ y i) Finset.univ) = 1)
+          ∧ f x ≠ f y)
+        Finset.univ))
+```
+
+Let's unpack this in pieces.
+
+### Term-level definition (no tactics)
+
+This snippet is written entirely in **term mode** (a direct expression), not in tactic mode. There are **no tactics** here — no `by`, `simp`, `linarith`, etc. Everything is a nested expression that Lean can typecheck without any proof scripting.
+
+### Types and inputs
+
+- `n : ℕ` is the input size.
+- An input vector `x` is represented as a function `Fin n → Bool`, i.e., a Boolean value for each index `0, 1, ..., n-1`.
+- The Boolean function is `f : (Fin n → Bool) → Bool`.
+
+**Correspondence with standard notation**: In the mathematical literature, inputs are elements of `{0,1}^n`. In Lean, we use `Fin n → Bool` with the convention:
+- `false` corresponds to `0`
+- `true` corresponds to `1`
+
+So a Boolean vector like `(0, 1, 1, 0)` becomes the function `fun i => if i = 1 ∨ i = 2 then true else false`.
+
+### Finsets and `Finset.univ`
+
+Lean uses finite sets (`Finset`) to quantify over all elements of a finite type. Here:
+
+- `Finset.univ` over `Fin n → Bool` is the set of all Boolean vectors of length `n`.
+- `Finset.univ` over `Fin n` is the set of all indices `0..n-1`.
+- `Finset` is a data type for finite sets with decidable equality; it carries a list-like representation plus proofs that duplicates are removed.
+
+**Why this works**: Lean knows that `Fin n → Bool` is a finite type via the `Fintype` instance for function types. Specifically, `Fintype.card (Fin n → Bool) = 2^n` because there are 2 choices (true/false) for each of the `n` positions. This instance allows `Finset.univ` to enumerate all `2^n` Boolean vectors.
+
+### Counting Hamming distance 1
+
+Inside the definition, this fragment:
+
+```lean
+Finset.card (Finset.filter (fun i => x i ≠ y i) Finset.univ)
+```
+
+counts the number of indices `i` where `x i` differs from `y i`. This is the Hamming distance between `x` and `y`.
+
+The condition
+
+```lean
+(... = 1)
+```
+
+forces `y` to differ from `x` in exactly one coordinate.
+
+### Counting sensitive neighbors
+
+The inner filter is:
+
+```lean
+Finset.filter (fun y => (distance = 1) ∧ f x ≠ f y) Finset.univ
+```
+
+So for a fixed `x`, it keeps all `y` with Hamming distance 1 from `x` and where `f` flips value. Then:
+
+```lean
+Finset.card (...)
+```
+
+counts how many such `y` exist. This is the **sensitivity of `f` at `x`**.
+
+### Taking the maximum
+
+Finally,
+
+```lean
+Finset.sup Finset.univ (fun x => ...)
+```
+
+computes the supremum of that count across all inputs `x`. This yields the overall sensitivity of `f`.
+
+**Technical note on `Finset.sup`**: This is the lattice supremum operation. For natural numbers (`ℕ`), the lattice supremum is simply the maximum. The function `Finset.sup` requires a `SemilatticeSup` instance with a bottom element `⊥`; for `ℕ`, this bottom is `0`. If the set is empty, `Finset.sup` returns `⊥ = 0`. For nonempty sets, you could equivalently use `Finset.sup'` which doesn't need the bottom element but requires a nonemptiness proof.
+
+## Worked example: the OR function
+
+Let `n = 3` and define `f` to be the OR function:
+
+```lean
+def or3 : (Fin 3 → Bool) → Bool := fun x => x 0 || x 1 || x 2
+```
+
+In standard notation, `or3(x₀, x₁, x₂) = x₀ ∨ x₁ ∨ x₂`, which is `true` if any bit is `true`.
+
+**Analyzing sensitivity at each input:**
+
+- `x = (false, false, false)` (the all-zeros input):
+  - Neighbors are `(true, false, false)`, `(false, true, false)`, `(false, false, true)`
+  - All three neighbors have `or3 = true`, while `or3 x = false`
+  - So sensitivity at this input is **3**
+
+- `x = (true, true, true)` (the all-ones input):
+  - Neighbors are `(false, true, true)`, `(true, false, true)`, `(true, true, false)`
+  - All three neighbors still have `or3 = true`, same as `or3 x = true`
+  - So sensitivity at this input is **0**
+
+- `x = (true, false, false)`:
+  - Neighbors: `(false, false, false)` has `or3 = false` ≠ `or3 x = true` ✓
+  - Neighbors: `(true, true, false)` and `(true, false, true)` have `or3 = true` = `or3 x`
+  - So sensitivity at this input is **1**
+
+The maximum over all 8 inputs is **3**, achieved at the all-zeros input. Thus `sensitivity or3 = 3`.
+
+In Lean, the definition enumerates all `x : Fin 3 → Bool` (8 inputs), counts sensitive neighbors for each, and takes the maximum via `Finset.sup`.
+
+## Formal mathematical definition
+
+For completeness, here is the standard mathematical definition that the Lean code encodes:
+
+**Definition**: The **sensitivity at input \(x\)** is:
+\[
+s(f, x) = |\{i \in [n] : f(x) \neq f(x^{\oplus i})\}|
+\]
+where \(x^{\oplus i}\) denotes \(x\) with the \(i\)-th bit flipped.
+
+**Definition**: The **sensitivity of \(f\)** is:
+\[
+s(f) = \max_{x \in \{0,1\}^n} s(f, x)
+\]
+
+The Lean definition directly implements this: `Finset.filter` computes the set \(\{i : f(x) \neq f(x^{\oplus i})\}\), `Finset.card` computes its cardinality, and `Finset.sup` computes the maximum.
+
+## Summary
+
+- The definition computes the maximum number of one-bit flips that change \(f\).
+- It uses `Finset.univ` to enumerate all inputs and all indices.
+- The Hamming distance test `= 1` enforces single-bit flips.
+- The final `Finset.sup` takes the maximum over all inputs.
+
+This is a direct, faithful Lean translation of the standard mathematical definition of sensitivity.

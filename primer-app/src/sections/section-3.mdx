@@ -1,0 +1,75 @@
+# Section 3: The Parity Character χ_S
+
+This section defines the Boolean character \(\chi_S(x)\), a basic building block of Fourier analysis on the Boolean cube \(\{0,1\}^n\).
+
+## Definition in math form
+
+The Lean code defines:
+
+```lean
+def chi {n : ℕ} (S : Finset (Fin n)) (x : Fin n → Bool) : ℝ :=
+  if (Finset.filter (fun i => x i) S).card % 2 = 0 then 1 else -1
+```
+
+Translated to math, if we view a Boolean input \(x : \{0,1\}^n\) and a subset \(S \subseteq [n]\), then
+
+\[
+\chi_S(x) = (-1)^{|\{ i \in S : x_i = 1 \}|}.
+\]
+
+In words: count how many indices in \(S\) have value 1 under \(x\). If that count is even, \(\chi_S(x) = 1\); if it is odd, \(\chi_S(x) = -1\).
+
+The code expresses exactly this parity test:
+- `Finset.filter (fun i => x i) S` is the subset of \(S\) where \(x_i\) is true.
+- `.card % 2` takes the parity of that count.
+- Even parity gives `1`, odd parity gives `-1`.
+
+## Why it always returns ±1
+
+Because \(\chi_S(x)\) is defined as a parity test, it has only two possible outcomes:
+- If the count of ones in \(S\) is even, then \(\chi_S(x)=1\).
+- If the count is odd, then \(\chi_S(x)=-1\).
+
+There is no other possibility. Parity only distinguishes even vs. odd, so the output is always \(+1\) or \(-1\).
+
+Another way to see this is through the exponent form:
+\[
+\chi_S(x) = (-1)^{k}, \quad k = |\{ i \in S : x_i = 1 \}|.
+\]
+When \(k\) is even, \((-1)^k=1\); when \(k\) is odd, \((-1)^k=-1\).
+
+## Role in Fourier analysis on the Boolean cube
+
+The characters \(\chi_S\) form the Fourier basis for functions \(f : \{0,1\}^n \to \mathbb{R}\). Concretely:
+
+- The collection \(\{\chi_S : S \subseteq [n]\}\) is an orthonormal basis under the inner product
+  \[
+  \langle f, g \rangle = \mathbb{E}_x[f(x)g(x)] = \frac{1}{2^n} \sum_{x \in \{0,1\}^n} f(x)g(x),
+  \]
+  where \(x\) is uniformly random in \(\{0,1\}^n\).
+
+**Orthonormality proof sketch**: To show \(\langle \chi_S, \chi_T \rangle = \delta_{S,T}\):
+- When \(S = T\): \(\chi_S(x)^2 = 1\) for all \(x\), so \(\mathbb{E}[\chi_S^2] = 1\).
+- When \(S \neq T\): Let \(i \in S \triangle T\) (the symmetric difference). For each assignment to coordinates outside \(\{i\}\), flipping \(x_i\) flips the sign of \(\chi_S(x)\chi_T(x)\). Since exactly half the inputs have \(x_i = 0\) and half have \(x_i = 1\), the contributions cancel, giving \(\mathbb{E}[\chi_S \chi_T] = 0\).
+
+- Every function can be expanded as
+  \[
+  f(x) = \sum_{S \subseteq [n]} \hat f(S) \chi_S(x).
+  \]
+
+- The Fourier coefficient for subset \(S\) is exactly the expectation noted in the Lean comment:
+  \[
+  \hat f(S) = \mathbb{E}_x\big[f(x)\,\chi_S(x)\big].
+  \]
+
+Intuitively, \(\chi_S\) measures the parity of \(x\) on the coordinates in \(S\). Multiplying by \(\chi_S(x)\) and averaging over all \(x\) tells us how much of that parity pattern is present in \(f\). Large coefficients indicate that \(f\) correlates with the parity on \(S\).
+
+Finally, the **Fourier degree** (or simply **degree**) of a function \(f : \{0,1\}^n \to \mathbb{R}\) is the largest size \(|S|\) for which \(\hat f(S)\neq 0\). This is the maximum order of parity interaction appearing in the Fourier expansion. For a Boolean function \(f : \{0,1\}^n \to \{0,1\}\), we treat the output as real-valued (0 or 1) and apply the same definition. By convention, the constant zero function has degree 0 (or sometimes −∞).
+
+## Summary
+
+- \(\chi_S(x)\) is defined as \((-1)^{|\{i \in S : x_i = 1\}|}\), computed via a parity test.
+- It always returns \(+1\) or \(-1\).
+- The characters \(\chi_S\) form an orthonormal Fourier basis on the Boolean cube.
+- Fourier coefficients measure correlation with parity patterns.
+- The degree of a Boolean function is the largest set size with a nonzero Fourier coefficient.
