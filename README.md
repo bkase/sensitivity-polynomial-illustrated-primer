@@ -55,6 +55,15 @@ bun run build
 
 The built output goes to `docs/` for GitHub Pages deployment.
 
+To view locally:
+
+```bash
+cd docs
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000` in your browser.
+
 ## References
 
 - Huang, Hao. "Induced subgraphs of hypercubes and a proof of the Sensitivity Conjecture." *Annals of Mathematics* 190.3 (2019): 949-955.
