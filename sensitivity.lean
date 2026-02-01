@@ -254,6 +254,9 @@ set_option autoImplicit false
 
 noncomputable section
 
+/-! ## Section 1: Core definitions
+  Sensitivity, Fourier coefficients, and degree for Boolean functions.
+-/
 /-
 The sensitivity of a boolean function f is the maximum over all inputs x of the number of neighbors y of x such that f(x) ≠ f(y).
 -/
@@ -275,6 +278,9 @@ noncomputable def fourier_coeff {n : ℕ} (f : (Fin n → Bool) → Bool) (S : F
 noncomputable def degree {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
   Finset.sup (Finset.filter (fun S => fourier_coeff f S ≠ 0) Finset.univ) Finset.card
 
+/-! ## Section 2: Equivalences and Huang matrix definition
+  Reindexing tools and the recursive definition of the Huang matrix.
+-/
 /-
 Equivalence between Bool x alpha and alpha + alpha.
 -/
@@ -351,6 +357,10 @@ theorem huang_matrix_eigenvalues {n : ℕ} {μ : ℝ} (h : Module.End.HasEigenva
   simp_all +decide [ sq ];
   exact smul_left_injective _ hv.2 <| by simpa [ mul_assoc, smul_smul ] using h_sq;
 
+/-! ## Section 3: Spectral preliminaries
+  Sorted eigenvalues, interlacing, and basic spectral facts for symmetric
+  matrices.
+-/
 /-
 The sorted list of eigenvalues of a real matrix, defined as the sorted roots of its characteristic polynomial.
 -/
@@ -407,120 +417,120 @@ def min_max_eigenvalue {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (k : ℕ) : �
       dotProduct (A.mulVec (x : Fin n → ℝ)) (x : Fin n → ℝ)
 
 /-
+Permuted lists induce a permutation of indices preserving `List.get`.
+-/
+lemma list_perm_exists_equiv_get (L M : List ℝ) (h_perm : List.Perm L M) :
+  ∃ σ : Fin L.length ≃ Fin M.length,
+    ∀ i : Fin L.length, L.get i = M.get (σ i) := by
+    classical
+    induction h_perm with
+    | nil =>
+        refine ⟨Equiv.refl _, ?_⟩
+        intro i
+        exact (Fin.elim0 i)
+    | cons a h_perm ih =>
+        rename_i L' M'
+        obtain ⟨σ, hσ⟩ := ih
+        let f : Fin (L'.length + 1) → Fin (M'.length + 1) :=
+          fun i => Fin.cases ⟨0, by simp⟩ (fun i => Fin.succ (σ i)) i
+        have hf_inj : Function.Injective f := by
+          intro i j hij
+          cases i using Fin.cases with
+          | zero =>
+              cases j using Fin.cases with
+              | zero => rfl
+              | succ j =>
+                  simp [f] at hij
+                  exact (Fin.succ_ne_zero _ (Eq.symm hij)).elim
+          | succ i =>
+              cases j using Fin.cases with
+              | zero =>
+                  simp [f] at hij
+              | succ j =>
+                  simp [f] at hij
+                  exact congrArg Fin.succ hij
+        have hf_surj : Function.Surjective f := by
+          intro j
+          cases j using Fin.cases with
+          | zero =>
+              refine ⟨⟨0, by simp⟩, ?_⟩
+              simp [f]
+          | succ j =>
+              refine ⟨Fin.succ (σ.symm j), ?_⟩
+              simp [f]
+        let σ' : Fin (L'.length + 1) ≃ Fin (M'.length + 1) :=
+          Equiv.ofBijective f ⟨hf_inj, hf_surj⟩
+        refine ⟨σ', ?_⟩
+        intro i
+        cases i using Fin.cases with
+        | zero =>
+            simp [σ', f]
+        | succ i =>
+            simpa [σ', f, List.get_cons_succ'] using hσ i
+    | swap a b l =>
+        refine ⟨Equiv.swap ⟨0, by simp⟩ ⟨1, by simp⟩, ?_⟩
+        intro i
+        refine Fin.cases ?h0 ?hs i
+        · simp
+        · intro i
+          refine Fin.cases ?h1 ?hrest i
+          · simp
+          · intro j
+            have hne0 : (Fin.succ (Fin.succ j) : Fin (l.length + 2)) ≠ 0 := by
+              exact Fin.succ_ne_zero _
+            have hne1 : (Fin.succ (Fin.succ j) : Fin (l.length + 2)) ≠ 1 := by
+              exact Fin.succ_succ_ne_one _
+            simp [Equiv.swap_apply_of_ne_of_ne hne0 hne1]
+    | trans h₁ h₂ ih₁ ih₂ =>
+        obtain ⟨σ₁, hσ₁⟩ := ih₁
+        obtain ⟨σ₂, hσ₂⟩ := ih₂
+        refine ⟨σ₁.trans σ₂, ?_⟩
+        intro i
+        exact (hσ₁ i).trans (hσ₂ (σ₁ i))
+
+/-
+The sorted eigenvalues are a permutation of the unsorted eigenvalues list.
+-/
+lemma sorted_eigenvalues_list_perm {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ)
+  (hA : A.IsSymm) :
+  List.Perm (sorted_eigenvalues A hA)
+    (List.ofFn (Matrix.IsHermitian.eigenvalues
+      (isSymm_iff_isHermitian_real A |>.mp hA))) := by
+    unfold sorted_eigenvalues
+    generalize_proofs at *
+    simpa using
+      (List.mergeSort_perm
+        (List.ofFn (Matrix.IsHermitian.eigenvalues
+          (isSymm_iff_isHermitian_real A |>.mp hA)))
+        (· ≤ ·))
+
+/-
 The sorted eigenvalues are a permutation of the eigenvalues.
 -/
 lemma sorted_eigenvalues_is_perm {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
   ∃ σ : Equiv.Perm (Fin n), ∀ (i : Fin n),
     (sorted_eigenvalues A hA).get ⟨i, by rw [sorted_eigenvalues_length]; exact i.2⟩ =
     Matrix.IsHermitian.eigenvalues ((isSymm_iff_isHermitian_real A).mp hA) (σ i) := by
-      classical
-      -- Since L and M are permutations, there is a permutation of indices matching their entries.
-      have h_perm : ∀ (L M : List ℝ), List.Perm L M →
-          ∃ σ : Fin L.length ≃ Fin M.length, ∀ i : Fin L.length, L.get i = M.get (σ i) := by
-        intro L M h_perm
-        induction h_perm with
-        | nil =>
-            refine ⟨Equiv.refl _, ?_⟩
-            intro i
-            exact (Fin.elim0 i)
-        | cons a h_perm ih =>
-            rename_i L' M'
-            obtain ⟨σ, hσ⟩ := ih
-            let f : Fin (L'.length + 1) → Fin (M'.length + 1) :=
-              fun i => Fin.cases ⟨0, by simp⟩ (fun i => Fin.succ (σ i)) i
-            have hf_inj : Function.Injective f := by
-              intro i j hij
-              cases i using Fin.cases with
-              | zero =>
-                  cases j using Fin.cases with
-                  | zero => rfl
-                  | succ j =>
-                      simp [f] at hij
-                      exact (Fin.succ_ne_zero _ (Eq.symm hij)).elim
-              | succ i =>
-                  cases j using Fin.cases with
-                  | zero =>
-                      simp [f] at hij
-                      -- goal is closed by simp
-                  | succ j =>
-                      simp [f] at hij
-                      exact congrArg Fin.succ hij
-            have hf_surj : Function.Surjective f := by
-              intro j
-              cases j using Fin.cases with
-              | zero =>
-                  refine ⟨⟨0, by simp⟩, ?_⟩
-                  simp [f]
-              | succ j =>
-                  refine ⟨Fin.succ (σ.symm j), ?_⟩
-                  simp [f]
-            let σ' : Fin (L'.length + 1) ≃ Fin (M'.length + 1) :=
-              Equiv.ofBijective f ⟨hf_inj, hf_surj⟩
-            refine ⟨σ', ?_⟩
-            intro i
-            cases i using Fin.cases with
-            | zero =>
-                simp [σ', f]
-            | succ i =>
-                simpa [σ', f, List.get_cons_succ'] using hσ i
-        | swap a b l =>
-            refine ⟨Equiv.swap ⟨0, by simp⟩ ⟨1, by simp⟩, ?_⟩
-            intro i
-            refine Fin.cases ?h0 ?hs i
-            ·
-              simp
-            · intro i
-              refine Fin.cases ?h1 ?hrest i
-              ·
-                simp
-              · intro j
-                have hne0 : (Fin.succ (Fin.succ j) : Fin (l.length + 2)) ≠ 0 := by
-                  exact Fin.succ_ne_zero _
-                have hne1 : (Fin.succ (Fin.succ j) : Fin (l.length + 2)) ≠ 1 := by
-                  exact Fin.succ_succ_ne_one _
-                simp [Equiv.swap_apply_of_ne_of_ne hne0 hne1]
-        | trans h₁ h₂ ih₁ ih₂ =>
-            obtain ⟨σ₁, hσ₁⟩ := ih₁
-            obtain ⟨σ₂, hσ₂⟩ := ih₂
-            refine ⟨σ₁.trans σ₂, ?_⟩
-            intro i
-            exact (hσ₁ i).trans (hσ₂ (σ₁ i))
-      generalize_proofs at *
-      -- Apply the permutation property to the sorted eigenvalues and the original eigenvalues.
-      obtain ⟨σ, hσ⟩ :
-          ∃ σ : Fin n ≃ Fin n,
-            ∀ i : Fin n,
-              (sorted_eigenvalues A hA).get ⟨i, by rw [sorted_eigenvalues_length]; exact i.2⟩ =
-                (Matrix.IsHermitian.eigenvalues (isSymm_iff_isHermitian_real A |>.mp hA)) (σ i) := by
-        have h_perm_list :
-            List.Perm (sorted_eigenvalues A hA)
-              (List.ofFn (Matrix.IsHermitian.eigenvalues (isSymm_iff_isHermitian_real A |>.mp hA))) := by
-          unfold sorted_eigenvalues
-          generalize_proofs at *
-          simpa using
-            (List.mergeSort_perm
-              (List.ofFn (Matrix.IsHermitian.eigenvalues (isSymm_iff_isHermitian_real A |>.mp hA)))
-              (· ≤ ·))
-        rcases h_perm _ _ h_perm_list with ⟨σ, hσ⟩
-        let f := Matrix.IsHermitian.eigenvalues (isSymm_iff_isHermitian_real A |>.mp hA)
-        have hlenL : (sorted_eigenvalues A hA).length = n := sorted_eigenvalues_length A hA
-        have hlenM : (List.ofFn f).length = n := by
-          simp
-        -- transport σ to a permutation on Fin n using the length equalities
-        let σ' : Fin n ≃ Fin n :=
-          (finCongr hlenL.symm).trans (σ.trans (finCongr hlenM))
-        refine ⟨σ', ?_⟩
-        intro i
-        let iL : Fin (sorted_eigenvalues A hA).length := finCongr hlenL.symm i
-        have hidx :
-            (⟨i, by
-                simp [sorted_eigenvalues_length]⟩ :
-              Fin (sorted_eigenvalues A hA).length) = iL := by
-          apply Fin.ext
-          rfl
-        have hσi := hσ iL
-        simpa [σ', iL, hidx, f, List.get_ofFn] using hσi
-      exact ⟨σ, hσ⟩
+    classical
+    have h_perm_list := sorted_eigenvalues_list_perm A hA
+    obtain ⟨σ, hσ⟩ := list_perm_exists_equiv_get _ _ h_perm_list
+    let f := Matrix.IsHermitian.eigenvalues (isSymm_iff_isHermitian_real A |>.mp hA)
+    have hlenL : (sorted_eigenvalues A hA).length = n := sorted_eigenvalues_length A hA
+    have hlenM : (List.ofFn f).length = n := by
+      simp
+    let σ' : Fin n ≃ Fin n :=
+      (finCongr hlenL.symm).trans (σ.trans (finCongr hlenM))
+    refine ⟨σ', ?_⟩
+    intro i
+    let iL : Fin (sorted_eigenvalues A hA).length := finCongr hlenL.symm i
+    have hidx :
+        (⟨i, by
+            simp [sorted_eigenvalues_length]⟩ :
+          Fin (sorted_eigenvalues A hA).length) = iL := by
+      apply Fin.ext
+      rfl
+    have hσi := hσ iL
+    simpa [σ', iL, hidx, f, List.get_ofFn] using hσi
 
 /-
 There exists an orthonormal basis of eigenvectors corresponding to the sorted eigenvalues.
@@ -549,19 +559,10 @@ lemma inner_eq_dotProduct {n : ℕ} (x y : EuclideanSpace ℝ (Fin n)) :
     simp +decide [ dotProduct, inner ];
     ac_rfl
 
-/-
-$\EE(g) \neq 0$
+/-! ## Section 4: Huang matrix reindexing and eigen-structure
+  Reindex to Fin (2^n) and derive trace/eigenvalue structure of the
+  Huang matrix.
 -/
-theorem g_expectation_nonzero {n : ℕ} (f : (Fin n → Bool) → Bool) (h_deg : degree f = n) (hn : n ≠ 0) :
-  let g := fun x => (if f x then 1 else 0) * chi Finset.univ x
-  (Finset.sum Finset.univ g) ≠ 0 := by
-    have h_fourier_coeff : ∃ S : Finset (Fin n), fourier_coeff f S ≠ 0 ∧ S.card = n := by
-      contrapose! h_deg;
-      refine' ne_of_lt ( lt_of_le_of_lt ( Finset.sup_le _ ) _ );
-      exacts [ n - 1, fun S hS => Nat.le_sub_one_of_lt <| lt_of_le_of_ne ( le_trans ( Finset.card_le_univ _ ) <| by simp ) <| h_deg S <| by simpa using hS, Nat.pred_lt hn ];
-    obtain ⟨ S, hS₁, hS₂ ⟩ := h_fourier_coeff; simp_all +decide [ fourier_coeff ] ;
-    have := Finset.eq_of_subset_of_card_le ( Finset.subset_univ S ) ; aesop;
-
 /-
 Equivalence between boolean functions and Fin (2^n).
 -/
@@ -841,50 +842,6 @@ noncomputable def huang_eigenvalues (n : ℕ) : List ℝ :=
   sorted_eigenvalues (huang_matrix_fin n) (huang_matrix_fin_isSymm n)
 
 /-
-The absolute value of the Huang matrix entries is the adjacency matrix of the hypercube.
--/
-theorem abs_huang_eq_adjacency (n : ℕ) (i j : Fin n → Bool) :
-  |huang_matrix n i j| = if (Finset.filter (fun k => i k ≠ j k) Finset.univ).card = 1 then 1 else 0 := by
-    rcases n with ( _ | n );
-    · aesop;
-    · -- By induction on $n$, we can show that the absolute value of the entries of the Huang matrix is the adjacency matrix of the hypercube.
-      have h_ind : ∀ n : ℕ, ∀ i j : Fin (n + 1) → Bool, |(huang_matrix (n + 1)) i j| = if (Finset.card (Finset.filter (fun k => i k ≠ j k) Finset.univ)) = 1 then 1 else 0 := by
-        -- We proceed by induction on $n$.
-        intro n
-        induction' n with n ih;
-        · simp +decide [ huang_matrix ];
-          intro i j; fin_cases i <;> fin_cases j <;> simp +decide [ finSuccEquiv_huang_custom ] ;
-          · rfl;
-          · simp +decide [ boolProdEquivSum_custom, finSuccEquiv_custom ];
-            simp +decide [ Matrix.one_apply ];
-          · simp +decide [ boolProdEquivSum_custom, finSuccEquiv_custom ];
-            simp +decide [ Matrix.one_apply ];
-          · rfl;
-        · intro i j;
-          -- By definition of `huang_matrix`, we can split into cases based on whether `i` and `j` are in the same block or different blocks.
-          have h_split : ∀ i j : Fin (n + 2) → Bool, |(huang_matrix (n + 2)) i j| = if (i 0 = j 0) then |(huang_matrix (n + 1)) (fun k => i (Fin.succ k)) (fun k => j (Fin.succ k))| else if (Finset.card (Finset.filter (fun k => i (Fin.succ k) ≠ j (Fin.succ k)) Finset.univ)) = 0 then 1 else 0 := by
-            intros i j;
-            have h_split : ∀ i j : Fin (n + 2) → Bool, |(huang_matrix (n + 2)) i j| = if (i 0 = j 0) then |(huang_matrix (n + 1)) (fun k => i (Fin.succ k)) (fun k => j (Fin.succ k))| else if (Finset.card (Finset.filter (fun k => i (Fin.succ k) ≠ j (Fin.succ k)) Finset.univ)) = 0 then 1 else 0 := by
-              intro i j
-              have h_def : huang_matrix (n + 2) = Matrix.reindex (finSuccEquiv_huang_custom (n + 1)).symm (finSuccEquiv_huang_custom (n + 1)).symm (Matrix.fromBlocks (huang_matrix (n + 1)) (1 : Matrix _ _ ℝ) (1 : Matrix _ _ ℝ) (-huang_matrix (n + 1))) := by
-                exact rfl
-              simp +decide [ h_def, Matrix.fromBlocks ];
-              unfold finSuccEquiv_huang_custom;
-              unfold finSuccEquiv_custom; simp +decide ;
-              unfold boolProdEquivSum_custom; simp +decide ;
-              split_ifs <;> simp +decide [ *, Matrix.one_apply ];
-              all_goals simp_all +decide [ funext_iff ];
-            exact h_split i j;
-          rw [ show ( Finset.univ.filter fun k => i k ≠ j k ) = if i 0 = j 0 then Finset.image ( Fin.succ ) ( Finset.univ.filter fun k => i ( Fin.succ k ) ≠ j ( Fin.succ k ) ) else Finset.image ( Fin.succ ) ( Finset.univ.filter fun k => i ( Fin.succ k ) ≠ j ( Fin.succ k ) ) ∪ { 0 } from ?_ ];
-          · split_ifs <;> simp_all +decide [ Finset.card_image_of_injective, Function.Injective ];
-          · ext ( _ | k ) <;> simp +decide;
-            · split_ifs <;> simp +decide [ * ];
-            · split_ifs <;> simp_all +decide [ Finset.mem_image, Finset.mem_insert ];
-              · exact ⟨ fun h => ⟨ ⟨ k, by linarith ⟩, h, rfl ⟩, by rintro ⟨ a, ha, ha' ⟩ ; cases a ; aesop ⟩;
-              · exact ⟨ fun h => ⟨ ⟨ k, by linarith ⟩, h, rfl ⟩, by rintro ⟨ a, h, ha ⟩ ; cases a ; aesop ⟩;
-      exact h_ind n i j
-
-/-
 The sorted eigenvalues of the Huang matrix A_n (for n > 0) are 2^(n-1) copies of -sqrt(n) and 2^(n-1) copies of sqrt(n).
 -/
 theorem huang_eigenvalues_eq_list (n : ℕ) (hn : n ≠ 0) :
@@ -895,6 +852,9 @@ theorem huang_eigenvalues_eq_list (n : ℕ) (hn : n ≠ 0) :
     · convert huang_eigenvalues_eq_list_succ n using 1;
       norm_cast
 
+/-! ## Section 5: Spectral bounds and interlacing
+  Rayleigh quotient tools and eigenvalue bounds for principal submatrices.
+-/
 /-
 Any eigenvalue of a real matrix is bounded in absolute value by the maximum absolute row sum.
 -/
@@ -1405,6 +1365,31 @@ lemma huang_submatrix_max_eigenvalue_ge_sqrt_n {n : ℕ} (hn : n ≠ 0)
     simp_all +decide [ List.getElem_append ];
     exact le_trans ( by rw [ if_neg ( by omega ) ] ) h_max_eigenvalue_ge_sqrt
 
+/-! ## Section 6: Level-set combinatorics
+  Build the large level set of g and relate it to sensitivity counts.
+-/
+/-
+$\EE(g) \neq 0$
+-/
+theorem g_expectation_nonzero {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (h_deg : degree f = n) (hn : n ≠ 0) :
+  let g := fun x => (if f x then 1 else 0) * chi Finset.univ x
+  (Finset.sum Finset.univ g) ≠ 0 := by
+    have h_fourier_coeff : ∃ S : Finset (Fin n), fourier_coeff f S ≠ 0 ∧
+        S.card = n := by
+      contrapose! h_deg
+      refine' ne_of_lt (lt_of_le_of_lt (Finset.sup_le _) _)
+      exacts [ n - 1,
+        fun S hS =>
+          Nat.le_sub_one_of_lt <|
+            lt_of_le_of_ne (le_trans (Finset.card_le_univ _) <|
+              by simp) <| h_deg S <| by simpa using hS,
+        Nat.pred_lt hn ]
+    obtain ⟨S, hS₁, hS₂⟩ := h_fourier_coeff
+    simp_all +decide [fourier_coeff]
+    have := Finset.eq_of_subset_of_card_le (Finset.subset_univ S)
+    aesop
+
 /-
 The sum of g_val is non-zero if f has full degree.
 -/
@@ -1483,6 +1468,9 @@ lemma exists_large_level_set {n : ℕ} (f : (Fin n → Bool) → Bool) (h_deg : 
       cases n <;> simp_all +decide [ pow_succ' ];
     grind
 
+/-! ## Section 7: Hypercube graph and adjacency bridge
+  Define the hypercube graph and connect adjacency with Huang matrix entries.
+-/
 /-
 Definition of the hypercube graph.
 -/
@@ -1496,6 +1484,91 @@ lemma hypercube_graph_adj {n : ℕ} (x y : Fin n → Bool) :
     apply Iff.intro;
     · simp_all +decide [ eq_comm ];
     · aesop
+
+/-
+The absolute value of the Huang matrix entries is the adjacency matrix of the hypercube.
+-/
+theorem abs_huang_eq_adjacency (n : ℕ) (i j : Fin n → Bool) :
+  |huang_matrix n i j| =
+    if (Finset.filter (fun k => i k ≠ j k) Finset.univ).card = 1 then 1 else 0 := by
+    rcases n with ( _ | n );
+    · aesop;
+    · -- By induction on $n$, we can show that the absolute value of the entries
+      -- of the Huang matrix is the adjacency matrix of the hypercube.
+      have h_ind : ∀ n : ℕ, ∀ i j : Fin (n + 1) → Bool,
+          |(huang_matrix (n + 1)) i j| =
+            if (Finset.card (Finset.filter (fun k => i k ≠ j k)
+              Finset.univ)) = 1 then 1 else 0 := by
+        -- We proceed by induction on $n$.
+        intro n
+        induction' n with n ih;
+        · simp +decide [ huang_matrix ];
+          intro i j; fin_cases i <;> fin_cases j <;>
+            simp +decide [ finSuccEquiv_huang_custom ] ;
+          · rfl;
+          · simp +decide [ boolProdEquivSum_custom, finSuccEquiv_custom ];
+            simp +decide [ Matrix.one_apply ];
+          · simp +decide [ boolProdEquivSum_custom, finSuccEquiv_custom ];
+            simp +decide [ Matrix.one_apply ];
+          · rfl;
+        · intro i j;
+          -- Split into cases based on whether `i` and `j` are in the same block.
+          have h_split : ∀ i j : Fin (n + 2) → Bool,
+              |(huang_matrix (n + 2)) i j| =
+                if (i 0 = j 0) then
+                  |(huang_matrix (n + 1))
+                    (fun k => i (Fin.succ k))
+                    (fun k => j (Fin.succ k))|
+                else
+                  if (Finset.card
+                      (Finset.filter (fun k => i (Fin.succ k) ≠ j (Fin.succ k))
+                        Finset.univ)) = 0 then 1 else 0 := by
+            intro i j
+            have h_split :
+                ∀ i j : Fin (n + 2) → Bool,
+                  |(huang_matrix (n + 2)) i j| =
+                    if (i 0 = j 0) then
+                      |(huang_matrix (n + 1))
+                        (fun k => i (Fin.succ k))
+                        (fun k => j (Fin.succ k))|
+                    else
+                      if (Finset.card
+                          (Finset.filter
+                            (fun k => i (Fin.succ k) ≠ j (Fin.succ k))
+                            Finset.univ)) = 0 then 1 else 0 := by
+              intro i j
+              have h_def : huang_matrix (n + 2) =
+                  Matrix.reindex (finSuccEquiv_huang_custom (n + 1)).symm
+                    (finSuccEquiv_huang_custom (n + 1)).symm
+                    (Matrix.fromBlocks (huang_matrix (n + 1))
+                      (1 : Matrix _ _ ℝ) (1 : Matrix _ _ ℝ)
+                      (-huang_matrix (n + 1))) := by
+                exact rfl
+              simp +decide [ h_def, Matrix.fromBlocks ];
+              unfold finSuccEquiv_huang_custom;
+              unfold finSuccEquiv_custom; simp +decide ;
+              unfold boolProdEquivSum_custom; simp +decide ;
+              split_ifs <;> simp +decide [ *, Matrix.one_apply ];
+              all_goals simp_all +decide [ funext_iff ];
+            exact h_split i j;
+          rw [ show ( Finset.univ.filter fun k => i k ≠ j k ) =
+              if i 0 = j 0 then
+                Finset.image Fin.succ
+                  (Finset.univ.filter fun k => i (Fin.succ k) ≠ j (Fin.succ k))
+              else
+                Finset.image Fin.succ
+                  (Finset.univ.filter fun k => i (Fin.succ k) ≠ j (Fin.succ k))
+                  ∪ { 0 } from ?_ ];
+          · split_ifs <;>
+              simp_all +decide [ Finset.card_image_of_injective, Function.Injective ];
+          · ext ( _ | k ) <;> simp +decide;
+            · split_ifs <;> simp +decide [ * ];
+            · split_ifs <;> simp_all +decide [ Finset.mem_image, Finset.mem_insert ];
+              · exact ⟨ fun h => ⟨ ⟨ k, by linarith ⟩, h, rfl ⟩,
+                  by rintro ⟨ a, ha, ha' ⟩ ; cases a ; aesop ⟩;
+              · exact ⟨ fun h => ⟨ ⟨ k, by linarith ⟩, h, rfl ⟩,
+                  by rintro ⟨ a, h, ha ⟩ ; cases a ; aesop ⟩;
+      exact h_ind n i j
 
 /-
 Neighbors in the hypercube graph have opposite chi values.
@@ -1608,85 +1681,122 @@ lemma sensitivity_at_x_eq_degree_in_S_neg {n : ℕ} (f : (Fin n → Bool) → Bo
     · have := chi_univ_neighbor x y h.1; unfold g_val at *; aesop;
     · have := g_val_neighbor_eq_iff_f_ne f x y h.1; aesop;
 
-/-
-A boolean function of degree n has sensitivity at least sqrt(n).
+/-! ## Section 8: Full-degree case (core bound)
+  Combine spectral bounds, graph degrees, and level-set structure to prove
+  sensitivity ≥ sqrt(n).
 -/
-theorem sensitivity_ge_sqrt_degree_of_degree_eq_n {n : ℕ} (f : (Fin n → Bool) → Bool) (h_deg : degree f = n) (hn : n ≠ 0) :
-  (sensitivity f : ℝ) ≥ Real.sqrt n := by
-  classical
-  -- Reduce to any level set with the "right" adjacency-count equality.
-  have h_main :
-      ∀ (S0 : Finset (Fin n → Bool)),
-        (∀ x ∈ S0,
-            (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ y ∈ S0) Finset.univ).card =
-              (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ f x ≠ f y) Finset.univ).card) →
-        S0.card > 2^(n-1) →
-        (sensitivity f : ℝ) ≥ Real.sqrt n := by
-    intro S0 h_eq hS0
-    -- Reindex S0 to Fin (2^n).
-    let S : Finset (Fin (2^n)) := S0.map (boolFunEquivFin n).toEmbedding
-    have hS : S.card > 2^(n-1) := by
-      simp [S, hS0]
-    let subA := principal_submatrix_fin (huang_matrix_fin n) S
-    let h_subA := principal_submatrix_fin_isSymm (huang_matrix_fin n) (huang_matrix_fin_isSymm n) S
-    let evs_sub := sorted_eigenvalues subA h_subA
-
-    -- Nonempty list witness for the spectral bounds.
-    have hnS : Fintype.card {x // x ∈ S} ≠ 0 := by
-      have hSpos : 0 < S.card := lt_of_le_of_lt (Nat.zero_le _) hS
-      rw [Fintype.card_coe]
-      exact ne_of_gt hSpos
-    have h_ne : evs_sub ≠ [] := by
-      apply List.ne_nil_of_length_pos
-      dsimp [evs_sub]
-      rw [sorted_eigenvalues_length]
-      exact Nat.pos_of_ne_zero hnS
-
-    -- Lower bound on λ_max from interlacing.
-    have hpos_sub : 0 < Fintype.card {x // x ∈ S} := by
-      exact Fintype.card_pos_iff.mpr
-        ⟨ ⟨ Classical.choose (Finset.card_pos.mp (pos_of_gt hS)),
-            Classical.choose_spec (Finset.card_pos.mp (pos_of_gt hS)) ⟩ ⟩
-    have h_ne0 : evs_sub ≠ [] := by
-      apply List.ne_nil_of_length_pos
-      dsimp [evs_sub]
-      rw [sorted_eigenvalues_length]
-      exact hpos_sub
-    have h_lower0 :
-        Real.sqrt n ≤ evs_sub.getLast h_ne0 := by
-      simpa [subA, h_subA, evs_sub, h_ne0] using
-        (huang_submatrix_max_eigenvalue_ge_sqrt_n (n := n) hn S hS)
-    have h_lower : Real.sqrt n ≤ evs_sub.getLast h_ne := by
-      have h_eq_last :
-          evs_sub.getLast h_ne0 = evs_sub.getLast h_ne := by
-        exact
-          (List.getLast_congr (l₁ := evs_sub) (l₂ := evs_sub)
-            (h₁ := h_ne0) (h₂ := h_ne) (h₃ := rfl))
-      rw [← h_eq_last]
-      exact h_lower0
-
-    -- Upper bound on λ_max by max degree of the induced graph.
-    have h_adj :
-        ∀ i j,
-          |subA i j| ≤ if (induced_hypercube_graph_fin_card S).Adj i j then 1 else 0 := by
-      intro i j
-      simpa [subA] using (huang_submatrix_bounded_by_induced_adjacency (S := S) i j)
-    have h_lambda_le_max :
-        evs_sub.getLast h_ne ≤ (induced_hypercube_graph_fin_card S).maxDegree := by
-      simpa [subA, h_subA, evs_sub, h_ne] using
-        (spectral_radius_bound (A := subA) (hA := h_subA)
-          (G := induced_hypercube_graph_fin_card S) h_adj hnS)
-
-    -- Max degree of the induced graph is at most sensitivity.
+lemma degree_le_sensitivity_of_eq {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (S0 : Finset (Fin n → Bool))
+  (h_eq :
+    ∀ x ∈ S0,
+      (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ y ∈ S0)
+          Finset.univ).card =
+        (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ f x ≠ f y)
+          Finset.univ).card)
+  [Fintype (↑S0 : Set (Fin n → Bool))] :
+  ∀ v0 : (↑S0 : Set (Fin n → Bool)),
+    ((hypercube_graph n).induce (S0 : Set (Fin n → Bool))).degree v0 ≤
+      sensitivity f := by
+    classical
+    intro v0
     let G0 : SimpleGraph {x // x ∈ (S0 : Set (Fin n → Bool))} :=
       (hypercube_graph n).induce (S0 : Set (Fin n → Bool))
-    let G1 : SimpleGraph {x // x ∈ (S : Set (Fin (2^n)))} :=
+    have h_map :
+        (G0.neighborFinset v0).map
+            (Function.Embedding.subtype fun x => x ∈ (S0 : Set (Fin n → Bool))) =
+          (hypercube_graph n).neighborFinset v0 ∩ S0 := by
+      ext y
+      constructor
+      · intro hy
+        rcases Finset.mem_map.1 hy with ⟨x, hx, rfl⟩
+        have hxadj : G0.Adj v0 x := by
+          exact (SimpleGraph.mem_neighborFinset (G := G0) (v := v0) (w := x)).1
+            hx
+        have hxadj' : (hypercube_graph n).Adj v0 x := by
+          simpa [G0] using hxadj
+        refine (Finset.mem_inter.2 ?_)
+        refine ⟨?_, ?_⟩
+        · simpa using hxadj'
+        · exact Finset.mem_coe.mp x.2
+      · intro hy
+        rcases (Finset.mem_inter.1 hy) with ⟨hAdj, hMem⟩
+        refine Finset.mem_map.2 ?_
+        refine ⟨⟨y, ?_⟩, ?_, rfl⟩
+        · exact hMem
+        ·
+          have hxadj : G0.Adj v0 ⟨y, hMem⟩ := by
+            simpa [G0] using hAdj
+          exact (SimpleGraph.mem_neighborFinset (G := G0) (v := v0)
+            (w := ⟨y, hMem⟩)).2 hxadj
+    have h_card :
+        (G0.neighborFinset v0).card =
+          ((hypercube_graph n).neighborFinset v0 ∩ S0).card := by
+      have h_card' := congrArg Finset.card h_map
+      simpa [Finset.card_map, -SimpleGraph.card_neighborFinset_eq_degree] using
+        h_card'
+    have h_filter :
+        (hypercube_graph n).neighborFinset v0 ∩ S0 =
+          Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0)
+            Finset.univ := by
+      ext y
+      simp [SimpleGraph.neighborFinset_eq_filter, Finset.mem_inter, Finset.mem_filter]
+    have h_degree_formula :
+        G0.degree v0 =
+          (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0)
+              Finset.univ).card := by
+      have h_card'' :
+          (G0.neighborFinset v0).card =
+            (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0)
+                Finset.univ).card := by
+        rw [← h_filter]
+        exact h_card
+      rw [← SimpleGraph.card_neighborFinset_eq_degree]
+      exact h_card''
+    have h_eq' := h_eq v0.1 (by exact Finset.mem_coe.mp v0.2)
+    have h_card_le :
+        (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ f v0 ≠ f y)
+            Finset.univ).card ≤ sensitivity f := by
+      unfold sensitivity
+      have :=
+        Finset.le_sup (s := Finset.univ)
+          (f := fun x =>
+            Finset.card
+              (Finset.filter
+                (fun y =>
+                  (Finset.card
+                      (Finset.filter (fun i => x i ≠ y i) Finset.univ) = 1) ∧
+                    f x ≠ f y)
+                Finset.univ))
+          (by
+            simp :
+              (v0 : Fin n → Bool) ∈ (Finset.univ : Finset (Fin n → Bool)))
+      simp [hypercube_graph_adj]
+      exact this
+    calc
+      G0.degree v0 =
+          (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0)
+              Finset.univ).card := h_degree_formula
+      _ = (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ f v0 ≠ f y)
+            Finset.univ).card := h_eq'
+      _ ≤ sensitivity f := h_card_le
+
+lemma maxDegree_le_sensitivity_of_level_set {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (S0 : Finset (Fin n → Bool))
+  (h_eq :
+    ∀ x ∈ S0,
+      (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ y ∈ S0)
+          Finset.univ).card =
+        (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ f x ≠ f y)
+          Finset.univ).card) :
+  let S : Finset (Fin (2^n)) := S0.map (boolFunEquivFin n).toEmbedding
+  (induced_hypercube_graph_fin_card S).maxDegree ≤ sensitivity f := by
+    classical
+    let S : Finset (Fin (2^n)) := S0.map (boolFunEquivFin n).toEmbedding
+    let G0 : SimpleGraph (↑S0 : Set (Fin n → Bool)) :=
+      (hypercube_graph n).induce (S0 : Set (Fin n → Bool))
+    let G1 : SimpleGraph (↑S : Set (Fin (2^n))) :=
       (hypercube_graph_fin n).induce (S : Set (Fin (2^n)))
-    -- Prefer the `Subtype.fintype` instance to avoid instance mismatch in neighbor finsets.
-    letI : Fintype {x // x ∈ (S0 : Set (Fin n → Bool))} := by
-      classical
-      exact (Subtype.fintype (p := fun x => x ∈ (S0 : Set (Fin n → Bool))))
-    let eS : {x // x ∈ (S0 : Set (Fin n → Bool))} ≃ {x // x ∈ (S : Set (Fin (2^n)))} :=
+    let eS : (↑S0 : Set (Fin n → Bool)) ≃ (↑S : Set (Fin (2^n))) :=
       { toFun := fun x =>
           ⟨ (boolFunEquivFin n) x.1,
             by
@@ -1716,8 +1826,8 @@ theorem sensitivity_ge_sqrt_degree_of_degree_eq_n {n : ℕ} (f : (Fin n → Bool
       { toEquiv := eS
         map_rel_iff' := by
           intro a b
-          -- Reduce to adjacency in the base graphs, then use the map-adj lemma.
-          change (hypercube_graph_fin n).Adj (eS a).1 (eS b).1 ↔ (hypercube_graph n).Adj a.1 b.1
+          change (hypercube_graph_fin n).Adj (eS a).1 (eS b).1 ↔
+            (hypercube_graph n).Adj a.1 b.1
           simp [hypercube_graph_fin, eS] }
     let equivS := Fintype.equivFin {x // x ∈ S}
     have iso2 : G1 ≃g induced_hypercube_graph_fin_card S := by
@@ -1725,104 +1835,201 @@ theorem sensitivity_ge_sqrt_degree_of_degree_eq_n {n : ℕ} (f : (Fin n → Bool
       exact SimpleGraph.Iso.map equivS G1
     let iso : G0 ≃g induced_hypercube_graph_fin_card S := iso2.comp iso1
 
-    have h_deg_le_G0 : ∀ v0 : {x // x ∈ S0}, G0.degree v0 ≤ sensitivity f := by
+    have h_deg_le_G0 :
+        ∀ v0 : (↑S0 : Set (Fin n → Bool)), G0.degree v0 ≤ sensitivity f := by
       intro v0
-      have h_map := SimpleGraph.map_neighborFinset_induce
-        (G := hypercube_graph n) (s := (S0 : Set (Fin n → Bool))) v0
-      have h_card :
-          (G0.neighborFinset v0).card =
-            ((hypercube_graph n).neighborFinset v0 ∩ S0).card := by
-        have h_card' := congrArg Finset.card h_map
-        simpa [G0, Finset.card_map, Finset.toFinset_coe, -SimpleGraph.card_neighborFinset_eq_degree] using
-          h_card'
-      have h_filter :
-          (hypercube_graph n).neighborFinset v0 ∩ S0 =
-            Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0) Finset.univ := by
-        ext y
-        simp [SimpleGraph.neighborFinset_eq_filter, Finset.mem_inter, Finset.mem_filter]
-      have h_degree_formula :
-          G0.degree v0 =
-            (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0) Finset.univ).card := by
-        have h_card'' :
-            (G0.neighborFinset v0).card =
-              (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0) Finset.univ).card := by
-          rw [← h_filter]
-          exact h_card
-        rw [← SimpleGraph.card_neighborFinset_eq_degree]
-        exact h_card''
-      have h_eq' := h_eq v0.1 (by exact Finset.mem_coe.mp v0.2)
-      have h_card_le :
-          (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ f v0 ≠ f y) Finset.univ).card
-            ≤ sensitivity f := by
-        unfold sensitivity
-        have :=
-          Finset.le_sup (s := Finset.univ)
-            (f := fun x =>
-              Finset.card
-                (Finset.filter
-                  (fun y =>
-                    (Finset.card
-                        (Finset.filter (fun i => x i ≠ y i) Finset.univ) = 1) ∧ f x ≠ f y)
-                  Finset.univ))
-            (by simp : (v0 : Fin n → Bool) ∈ (Finset.univ : Finset (Fin n → Bool)))
-        simp [hypercube_graph_adj]
-        exact this
-      calc
-        G0.degree v0
-            = (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ y ∈ S0) Finset.univ).card := h_degree_formula
-        _ = (Finset.filter (fun y => (hypercube_graph n).Adj v0 y ∧ f v0 ≠ f y) Finset.univ).card := h_eq'
-        _ ≤ sensitivity f := h_card_le
+      simpa [G0] using
+        (degree_le_sensitivity_of_eq (f := f) (S0 := S0) h_eq v0)
 
-    have h_maxDegree_le : (induced_hypercube_graph_fin_card S).maxDegree ≤ sensitivity f := by
-      refine SimpleGraph.maxDegree_le_of_forall_degree_le (G := induced_hypercube_graph_fin_card S)
-        (k := sensitivity f) ?_
-      intro i
-      let v0 := iso.symm i
-      have hdeg : (induced_hypercube_graph_fin_card S).degree i = G0.degree v0 := by
-        classical
-        have hcard := Fintype.card_congr (iso.mapNeighborSet v0)
-        have hiso :
-            (induced_hypercube_graph_fin_card S).degree (iso v0) = G0.degree v0 := by
-          calc
-            (induced_hypercube_graph_fin_card S).degree (iso v0) =
-                Fintype.card ((induced_hypercube_graph_fin_card S).neighborSet (iso v0)) := by
-                  symm
-                  simpa using
-                    (SimpleGraph.card_neighborSet_eq_degree
-                      (G := induced_hypercube_graph_fin_card S) (v := iso v0))
-            _ = Fintype.card (G0.neighborSet v0) := by
-                  simpa using hcard.symm
-            _ = G0.degree v0 := by
-                  simpa using (SimpleGraph.card_neighborSet_eq_degree (G := G0) (v := v0))
-        have hv0 : iso v0 = i := by
-          -- `iso` is an equivalence; rewrite with `Equiv.apply_symm_apply`.
-          simp [v0]
-        have hiso' := hiso
-        rw [hv0] at hiso'
-        exact hiso'
-      rw [hdeg]
-      exact h_deg_le_G0 v0
+    refine SimpleGraph.maxDegree_le_of_forall_degree_le
+      (G := induced_hypercube_graph_fin_card S) (k := sensitivity f) ?_
+    intro i
+    let v0 := iso.symm i
+    have hdeg : (induced_hypercube_graph_fin_card S).degree i = G0.degree v0 := by
+      classical
+      have hcard := Fintype.card_congr (iso.mapNeighborSet v0)
+      have hiso :
+          (induced_hypercube_graph_fin_card S).degree (iso v0) =
+            G0.degree v0 := by
+        calc
+          (induced_hypercube_graph_fin_card S).degree (iso v0) =
+              Fintype.card ((induced_hypercube_graph_fin_card S).neighborSet
+                (iso v0)) := by
+                symm
+                simpa using
+                  (SimpleGraph.card_neighborSet_eq_degree
+                    (G := induced_hypercube_graph_fin_card S) (v := iso v0))
+          _ = Fintype.card (G0.neighborSet v0) := by
+                simpa using hcard.symm
+          _ = G0.degree v0 := by
+                simpa using
+                  (SimpleGraph.card_neighborSet_eq_degree (G := G0) (v := v0))
+      have hv0 : iso v0 = i := by
+        simp [v0]
+      have hiso' := hiso
+      rw [hv0] at hiso'
+      exact hiso'
+    rw [hdeg]
+    exact h_deg_le_G0 v0
 
-    -- Combine the bounds.
-    have h_maxDegree_le' : (induced_hypercube_graph_fin_card S).maxDegree ≤ (sensitivity f : ℕ) := h_maxDegree_le
+lemma lower_bound_last_eigenvalue_submatrix {n : ℕ} (hn : n ≠ 0)
+  (S : Finset (Fin (2^n))) (hS : S.card > 2^(n-1)) :
+  ∀ h_ne :
+    sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+      (principal_submatrix_fin_isSymm (huang_matrix_fin n) (huang_matrix_fin_isSymm n) S) ≠
+        [],
+    Real.sqrt n ≤
+      (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+        (principal_submatrix_fin_isSymm (huang_matrix_fin n) (huang_matrix_fin_isSymm n) S)).getLast h_ne := by
+    intro h_ne
+    have h_ne0 :
+        sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S) ≠ [] := by
+      apply List.ne_nil_of_length_pos
+      rw [sorted_eigenvalues_length]
+      exact Fintype.card_pos_iff.mpr
+        ⟨ Classical.choose (Finset.card_pos.mp (pos_of_gt hS)),
+          Classical.choose_spec (Finset.card_pos.mp (pos_of_gt hS)) ⟩
+    have h_lower0 :
+        Real.sqrt n ≤
+          (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+            (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+              (huang_matrix_fin_isSymm n) S)).getLast h_ne0 := by
+      simpa using
+        (huang_submatrix_max_eigenvalue_ge_sqrt_n (n := n) hn S hS)
+    have h_eq_last :
+        (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S)).getLast h_ne0 =
+        (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S)).getLast h_ne := by
+      exact
+        (List.getLast_congr
+          (l₁ := sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+            (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+              (huang_matrix_fin_isSymm n) S))
+          (l₂ := sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+            (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+              (huang_matrix_fin_isSymm n) S))
+          (h₁ := h_ne0) (h₂ := h_ne) (h₃ := rfl))
+    simpa [h_eq_last] using h_lower0
+
+lemma upper_bound_last_eigenvalue_submatrix {n : ℕ}
+  (S : Finset (Fin (2^n))) (hnS : Fintype.card {x // x ∈ S} ≠ 0) :
+  ∀ h_ne :
+    sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+      (principal_submatrix_fin_isSymm (huang_matrix_fin n) (huang_matrix_fin_isSymm n) S) ≠
+        [],
+    (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+      (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+        (huang_matrix_fin_isSymm n) S)).getLast h_ne ≤
+      (induced_hypercube_graph_fin_card S).maxDegree := by
+    intro h_ne
+    have h_adj :
+        ∀ i j,
+          |(principal_submatrix_fin (huang_matrix_fin n) S) i j| ≤
+            if (induced_hypercube_graph_fin_card S).Adj i j then 1 else 0 := by
+      intro i j
+      simpa using (huang_submatrix_bounded_by_induced_adjacency (S := S) i j)
+    have h_ne0 :
+        sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S) ≠ [] := by
+      apply List.ne_nil_of_length_pos
+      rw [sorted_eigenvalues_length]
+      exact Nat.pos_of_ne_zero hnS
+    have h_upper0 :
+        (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S)).getLast h_ne0 ≤
+          (induced_hypercube_graph_fin_card S).maxDegree := by
+      simpa using
+        (spectral_radius_bound
+          (A := principal_submatrix_fin (huang_matrix_fin n) S)
+          (hA := principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S)
+          (G := induced_hypercube_graph_fin_card S) h_adj hnS)
+    have h_eq_last :
+        (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S)).getLast h_ne0 =
+        (sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+          (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+            (huang_matrix_fin_isSymm n) S)).getLast h_ne := by
+      exact
+        (List.getLast_congr
+          (l₁ := sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+            (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+              (huang_matrix_fin_isSymm n) S))
+          (l₂ := sorted_eigenvalues (principal_submatrix_fin (huang_matrix_fin n) S)
+            (principal_submatrix_fin_isSymm (huang_matrix_fin n)
+              (huang_matrix_fin_isSymm n) S))
+          (h₁ := h_ne0) (h₂ := h_ne) (h₃ := rfl))
+    simpa [h_eq_last] using h_upper0
+
+lemma sensitivity_bound_from_level_set {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (hn : n ≠ 0) (S0 : Finset (Fin n → Bool))
+  (h_eq :
+    ∀ x ∈ S0,
+      (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ y ∈ S0)
+          Finset.univ).card =
+        (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ f x ≠ f y)
+          Finset.univ).card)
+  (hS0 : S0.card > 2^(n-1)) :
+  (sensitivity f : ℝ) ≥ Real.sqrt n := by
+    classical
+    let S : Finset (Fin (2^n)) := S0.map (boolFunEquivFin n).toEmbedding
+    have hS : S.card > 2^(n-1) := by
+      simp [S, hS0]
+    have hnS : Fintype.card {x // x ∈ S} ≠ 0 := by
+      have hSpos : 0 < S.card := lt_of_le_of_lt (Nat.zero_le _) hS
+      rw [Fintype.card_coe]
+      exact ne_of_gt hSpos
+    let subA := principal_submatrix_fin (huang_matrix_fin n) S
+    let h_subA := principal_submatrix_fin_isSymm (huang_matrix_fin n)
+      (huang_matrix_fin_isSymm n) S
+    let evs_sub := sorted_eigenvalues subA h_subA
+    have h_ne : evs_sub ≠ [] := by
+      apply List.ne_nil_of_length_pos
+      dsimp [evs_sub]
+      rw [sorted_eigenvalues_length]
+      exact Nat.pos_of_ne_zero hnS
+    have h_lower : Real.sqrt n ≤ evs_sub.getLast h_ne := by
+      simpa [subA, h_subA, evs_sub] using
+        (lower_bound_last_eigenvalue_submatrix (n := n) hn S hS h_ne)
+    have h_lambda_le_max :
+        evs_sub.getLast h_ne ≤ (induced_hypercube_graph_fin_card S).maxDegree := by
+      simpa [subA, h_subA, evs_sub] using
+        (upper_bound_last_eigenvalue_submatrix (n := n) S hnS h_ne)
+    have h_maxDegree_le :
+        (induced_hypercube_graph_fin_card S).maxDegree ≤ sensitivity f := by
+      simpa [S] using
+        (maxDegree_le_sensitivity_of_level_set (f := f) (S0 := S0) h_eq)
     have h_upper : evs_sub.getLast h_ne ≤ (sensitivity f : ℝ) := by
-      exact le_trans h_lambda_le_max (by exact_mod_cast h_maxDegree_le')
-
+      exact le_trans h_lambda_le_max (by exact_mod_cast h_maxDegree_le)
     exact le_trans h_lower h_upper
 
-  -- Pick the large level set (S_pos or S_neg).
-  have h_large := exists_large_level_set f h_deg hn
-  cases h_large with
-  | inl hpos =>
-      apply h_main (S_pos f)
-      · intro x hx
-        simpa using (sensitivity_at_x_eq_degree_in_S_pos f x hx).symm
-      · exact hpos
-  | inr hneg =>
-      apply h_main (S_neg f)
-      · intro x hx
-        simpa using (sensitivity_at_x_eq_degree_in_S_neg f x hx).symm
-      · exact hneg
+/-
+A boolean function of degree n has sensitivity at least sqrt(n).
+-/
+theorem sensitivity_ge_sqrt_degree_of_degree_eq_n {n : ℕ}
+  (f : (Fin n → Bool) → Bool) (h_deg : degree f = n) (hn : n ≠ 0) :
+  (sensitivity f : ℝ) ≥ Real.sqrt n := by
+    -- Pick the large level set (S_pos or S_neg).
+    have h_large := exists_large_level_set f h_deg hn
+    cases h_large with
+    | inl hpos =>
+        apply sensitivity_bound_from_level_set (f := f) hn (S_pos f)
+        · intro x hx
+          simpa using (sensitivity_at_x_eq_degree_in_S_pos f x hx).symm
+        · exact hpos
+    | inr hneg =>
+        apply sensitivity_bound_from_level_set (f := f) hn (S_neg f)
+        · intro x hx
+          simpa using (sensitivity_at_x_eq_degree_in_S_neg f x hx).symm
+        · exact hneg
 
 /-
 The sensitivity of a restriction is at most the sensitivity of the original function.
