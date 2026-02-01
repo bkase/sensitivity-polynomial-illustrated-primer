@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "bun build index.html --outdir ../docs --minify"
+    "build": "bun generate-section-content.ts && bun build index.html --outdir ../docs --minify"
   },
   "devDependencies": {
     "@types/bun": "latest",

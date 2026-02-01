@@ -4,3 +4,6 @@
 
 # Lean build directory
 .lake/
+
+# Primer app generated files
+primer-app/src/sectionContent.ts
