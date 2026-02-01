@@ -1,75 +1,508 @@
-# Section 3: The Parity Character χ_S
+# Section 3: Spectral preliminaries
 
-This section defines the Boolean character \(\chi_S(x)\), a basic building block of Fourier analysis on the Boolean cube \(\{0,1\}^n\).
 
-## Definition in math form
+---
 
-The Lean code defines:
+This section proves a key identity for the Huang matrix `huang_matrix n`:
 
-```lean
-def chi {n : ℕ} (S : Finset (Fin n)) (x : Fin n → Bool) : ℝ :=
-  if (Finset.filter (fun i => x i) S).card % 2 = 0 then 1 else -1
+```
+(huang_matrix n)^2 = n * I
 ```
 
-Translated to math, if we view a Boolean input \(x : \{0,1\}^n\) and a subset \(S \subseteq [n]\), then
+where `I` is the identity matrix of the same size. In Lean, this appears as:
+
+```lean
+theorem huang_matrix_sq (n : ℕ) :
+  (huang_matrix n) ^ 2 = (n : ℝ) • (1 : Matrix (Fin n → Bool) (Fin n → Bool) ℝ)
+```
+
+Here `•` is scalar multiplication: `r • M` multiplies every entry of matrix `M` by scalar `r`.
+
+The matrix is indexed by `Fin n -> Bool`, so it has size `2^n x 2^n`. The proof uses induction on `n` and the special block structure of the Huang matrix.
+
+## Big picture
+
+The Huang matrix is built recursively using a block form. At a high level, if we write
+
+```
+A_{n+1} = [ A_n   I
+            I    -A_n ]
+```
+
+then squaring this block matrix gives
+
+```
+A_{n+1}^2 = [ A_n^2 + I   0
+              0     A_n^2 + I ]
+```
+
+By the induction hypothesis, `A_n^2 = n I`, so each diagonal block becomes `(n+1) I`. That yields
+
+```
+A_{n+1}^2 = (n+1) I
+```
+
+This is exactly what the Lean proof encodes.
+
+## Step-by-step reading of the Lean proof
+
+### 1) Induction on n
+
+The proof starts with:
+
+```lean
+induction' n with n ih;
+```
+
+- Base case `n = 0`: the matrix `H_0` is the 1×1 zero matrix `[0]` (see Section 6). Its square is `[0]`, and `0 • I = [0]`, so `H_0² = 0 • I` ✓
+- Inductive step: assume the result holds for `n`, prove it for `n+1`.
+
+### 2) Use the block definition
+
+The Huang matrix is defined recursively. The proof names that definition:
+
+```lean
+have h_def : huang_matrix (n + 1) =
+  Matrix.reindex ... (Matrix.fromBlocks (huang_matrix n) 1 1 (-huang_matrix n)) := by rfl
+```
+
+Two details:
+
+- `Matrix.fromBlocks` builds the block matrix `[A_n I; I -A_n]`.
+- `Matrix.reindex` just reorders indices so the block form matches the indexing by `(Fin (n+1) -> Bool)`. It does not change the algebraic content.
+
+### 3) Square the block matrix
+
+The proof then expands the square of the block matrix:
+
+```lean
+(Matrix.fromBlocks A I I (-A))^2
+  = Matrix.fromBlocks ((n+1)•I) 0 0 ((n+1)•I)
+```
+
+This is the critical calculation. Let's expand the block multiplication explicitly:
 
 \[
-\chi_S(x) = (-1)^{|\{ i \in S : x_i = 1 \}|}.
+\begin{bmatrix} A & I \\ I & -A \end{bmatrix}
+\begin{bmatrix} A & I \\ I & -A \end{bmatrix}
+= \begin{bmatrix} A^2 + I & AI - IA \\ IA - AI & I + A^2 \end{bmatrix}
+= \begin{bmatrix} A^2 + I & 0 \\ 0 & A^2 + I \end{bmatrix}
 \]
 
-In words: count how many indices in \(S\) have value 1 under \(x\). If that count is even, \(\chi_S(x) = 1\); if it is odd, \(\chi_S(x) = -1\).
+**Off-diagonal cancellation**: Since \(AI = IA = A\) (identity commutes with everything), we have \(AI + I(-A) = A - A = 0\).
 
-The code expresses exactly this parity test:
-- `Finset.filter (fun i => x i) S` is the subset of \(S\) where \(x_i\) is true.
-- `.card % 2` takes the parity of that count.
-- Even parity gives `1`, odd parity gives `-1`.
-
-## Why it always returns ±1
-
-Because \(\chi_S(x)\) is defined as a parity test, it has only two possible outcomes:
-- If the count of ones in \(S\) is even, then \(\chi_S(x)=1\).
-- If the count is odd, then \(\chi_S(x)=-1\).
-
-There is no other possibility. Parity only distinguishes even vs. odd, so the output is always \(+1\) or \(-1\).
-
-Another way to see this is through the exponent form:
+**Diagonal blocks**: Both diagonal blocks are \(A^2 + I\). By the induction hypothesis \(A^2 = nI\), so:
 \[
-\chi_S(x) = (-1)^{k}, \quad k = |\{ i \in S : x_i = 1 \}|.
+A^2 + I = nI + I = (n+1)I
 \]
-When \(k\) is even, \((-1)^k=1\); when \(k\) is odd, \((-1)^k=-1\).
 
-## Role in Fourier analysis on the Boolean cube
+Therefore:
+\[
+A_{n+1}^2 = \begin{bmatrix} (n+1)I & 0 \\ 0 & (n+1)I \end{bmatrix} = (n+1)I
+\]
 
-The characters \(\chi_S\) form the Fourier basis for functions \(f : \{0,1\}^n \to \mathbb{R}\). Concretely:
+Lean typically achieves this with:
+- `simp` to rewrite `A ⬝ I`, `I ⬝ A`, and `A ⬝ (-A)` using matrix identities
+- `simp [ih]` to apply the induction hypothesis `ih : (huang_matrix n)^2 = (n : ℝ) • I`
+- `simp` with `Matrix.fromBlocks` multiplication lemmas to reduce off-diagonal blocks to `0`
+- A ring- or arithmetic-simplification step to turn `n + 1` into `(n + 1 : ℝ)` after coercions
 
-- The collection \(\{\chi_S : S \subseteq [n]\}\) is an orthonormal basis under the inner product
-  \[
-  \langle f, g \rangle = \mathbb{E}_x[f(x)g(x)] = \frac{1}{2^n} \sum_{x \in \{0,1\}^n} f(x)g(x),
-  \]
-  where \(x\) is uniformly random in \(\{0,1\}^n\).
+### 4) Reindexing and extensionality
 
-**Orthonormality proof sketch**: To show \(\langle \chi_S, \chi_T \rangle = \delta_{S,T}\):
-- When \(S = T\): \(\chi_S(x)^2 = 1\) for all \(x\), so \(\mathbb{E}[\chi_S^2] = 1\).
-- When \(S \neq T\): Let \(i \in S \triangle T\) (the symmetric difference). For each assignment to coordinates outside \(\{i\}\), flipping \(x_i\) flips the sign of \(\chi_S(x)\chi_T(x)\). Since exactly half the inputs have \(x_i = 0\) and half have \(x_i = 1\), the contributions cancel, giving \(\mathbb{E}[\chi_S \chi_T] = 0\).
+The remainder of the Lean code uses `simp`, `ext`, and a case split on `i = j` to conclude the final equality after reindexing. This is bookkeeping to align the matrix entries with the identity matrix definition.
 
-- Every function can be expanded as
-  \[
-  f(x) = \sum_{S \subseteq [n]} \hat f(S) \chi_S(x).
-  \]
+## Why \(A^2 = nI\) matters: eigenvalues
 
-- The Fourier coefficient for subset \(S\) is exactly the expectation noted in the Lean comment:
-  \[
-  \hat f(S) = \mathbb{E}_x\big[f(x)\,\chi_S(x)\big].
-  \]
+If a square matrix \(A\) satisfies \(A^2 = nI\), then every eigenvalue \(\lambda\) must satisfy \(\lambda^2 = n\).
 
-Intuitively, \(\chi_S\) measures the parity of \(x\) on the coordinates in \(S\). Multiplying by \(\chi_S(x)\) and averaging over all \(x\) tells us how much of that parity pattern is present in \(f\). Large coefficients indicate that \(f\) correlates with the parity on \(S\).
+**Proof**: If \(Av = \lambda v\) for some nonzero vector \(v\), then:
+\[
+A^2 v = A(Av) = A(\lambda v) = \lambda(Av) = \lambda^2 v
+\]
 
-Finally, the **Fourier degree** (or simply **degree**) of a function \(f : \{0,1\}^n \to \mathbb{R}\) is the largest size \(|S|\) for which \(\hat f(S)\neq 0\). This is the maximum order of parity interaction appearing in the Fourier expansion. For a Boolean function \(f : \{0,1\}^n \to \{0,1\}\), we treat the output as real-valued (0 or 1) and apply the same definition. By convention, the constant zero function has degree 0 (or sometimes −∞).
+But \(A^2 = nI\) also implies \(A^2 v = nv\). Therefore:
+\[
+\lambda^2 v = nv
+\]
+
+Since \(v \neq 0\), we conclude \(\lambda^2 = n\).
+
+### Consequences
+
+- Over \(\mathbb{R}\), the only possible eigenvalues are \(+\sqrt{n}\) and \(-\sqrt{n}\).
+- The spectrum is symmetric: if \(\lambda\) is an eigenvalue, so is \(-\lambda\).
+- The matrix is diagonalizable over \(\mathbb{R}\) if it is symmetric. The Huang matrix is symmetric (proved in **Section 12**), so it has an orthonormal eigenbasis with eigenvalues \(\pm\sqrt{n}\).
 
 ## Summary
 
-- \(\chi_S(x)\) is defined as \((-1)^{|\{i \in S : x_i = 1\}|}\), computed via a parity test.
-- It always returns \(+1\) or \(-1\).
-- The characters \(\chi_S\) form an orthonormal Fourier basis on the Boolean cube.
-- Fourier coefficients measure correlation with parity patterns.
-- The degree of a Boolean function is the largest set size with a nonzero Fourier coefficient.
+The proof shows that the Huang matrix is an involution up to scaling: squaring it gives a scalar multiple of the identity. This immediately pins down the eigenvalues to the square roots of `n`, which is exactly why the comment at the end of the Lean file says: "The eigenvalues of the Huang matrix square to n."
+
+---
+
+This section proves a clean characterization of the eigenvalues of the Huang matrix. The key idea is that the matrix squares to a scalar multiple of the identity. From that, any eigenvalue must satisfy a simple quadratic equation.
+
+## The Lean statement
+
+```lean
+theorem huang_matrix_eigenvalues {n : ℕ} {μ : ℝ}
+  (h : Module.End.HasEigenvalue (Matrix.toLin' (huang_matrix n)) μ) :
+  μ ^ 2 = n := by
+  ...
+```
+
+Read this as: for any natural number `n` and real number `μ`, if `μ` is an eigenvalue of the linear map corresponding to `huang_matrix n`, then `μ^2 = n`.
+
+`Matrix.toLin'` coerces a matrix into a linear map.
+
+## Mathematical idea
+
+Let `A` be the Huang matrix. The earlier lemma `huang_matrix_sq n` says
+
+```
+A^2 = n I.
+```
+
+If `v` is an eigenvector for eigenvalue `μ`, then
+
+```
+A v = μ v.
+```
+
+Apply `A` again:
+
+```
+A^2 v = A (A v) = A (μ v) = μ (A v) = μ (μ v) = μ^2 v.
+```
+
+But `A^2 = n I`, so
+
+```
+A^2 v = n v.
+```
+
+Therefore
+
+```
+μ^2 v = n v.
+```
+
+Since `v` is a nonzero eigenvector, we can cancel `v` and conclude
+
+```
+μ^2 = n.
+```
+
+This is exactly what the theorem states: every eigenvalue must be a square root of `n` (over the reals, this means `μ = ±√n`).
+
+## How the Lean proof mirrors the math
+
+### 1) Extract an eigenvector
+
+```lean
+obtain ⟨ v, hv ⟩ := h.exists_hasEigenvector;
+```
+
+From `HasEigenvalue`, we get an eigenvector `v` with proof `hv` that it is nonzero and satisfies the eigenvector equation.
+
+### 2) Apply the squared matrix identity
+
+```lean
+have h_sq : (Matrix.toLin' (huang_matrix n)) (Matrix.toLin' (huang_matrix n) v)
+  = (n : ℝ) • v := by
+  convert congr_arg (fun x => x.mulVec v) <| huang_matrix_sq n using 1;
+  · simp +decide [sq];
+  · simp +decide [Matrix.smul_eq_diagonal_mul];
+```
+
+Here the proof applies the matrix identity `A^2 = n I` to the vector `v`. The `convert` step rewrites the identity in the form needed for `mulVec`, and `simp` handles the algebraic reshaping.
+
+### 3) Use the eigenvector equation
+
+```lean
+have h_eigen : (Matrix.toLin' (huang_matrix n)) v = μ • v := by
+  cases hv; aesop;
+```
+
+This is the direct eigenvector equation `A v = μ v`.
+
+### 4) Combine both and cancel the vector
+
+```lean
+simp_all +decide [sq];
+exact smul_left_injective _ hv.2 <| by
+  simpa [mul_assoc, smul_smul] using h_sq;
+```
+
+After rewriting, Lean shows `μ^2 • v = n • v`. The lemma `smul_left_injective` lets us cancel the nonzero vector `v` (the nonzero proof is `hv.2`), leaving `μ^2 = n`.
+
+## Takeaway
+
+The eigenvalues of the Huang matrix are completely determined by its squaring relation:
+
+```
+A^2 = n I  =>  μ^2 = n.
+```
+
+So eigenvalues are characterized by the equation `μ^2 = n`. This is the standard algebraic pattern: if a matrix squares to a scalar multiple of the identity, every eigenvalue squares to that scalar.
+
+---
+
+*(The comment at the end hints at defining the sorted list of eigenvalues as the sorted roots of the characteristic polynomial, but the proof here focuses only on the equation `μ^2 = n`.)*
+
+---
+
+This section introduces a few Lean definitions and lemmas that set up a web-style treatment of eigenvalue ordering and the classic interlacing pattern. The code is short, but it lays key groundwork: how to sort eigenvalues, how to express interlacing as a list property, and how symmetry ties to Hermitian structure.
+
+## 1. Sorting eigenvalues from the characteristic polynomial
+
+```lean
+noncomputable def sorted_eigenvalues_list {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) : List ℝ :=
+  (A.charpoly.roots).sort (· ≤ ·)
+```
+
+**Idea.** A matrix has a characteristic polynomial `A.charpoly`, whose roots are the eigenvalues (with multiplicity). The definition above collects those roots into a list and then sorts them using the usual order `≤` on real numbers.
+
+**Why `noncomputable`?** Extracting roots from a polynomial over `ℝ` is not computable in Lean's constructive sense. The definition is still valid mathematically, but it must be marked `noncomputable`.
+
+**Takeaway.** `sorted_eigenvalues_list A` is a sorted list of the eigenvalues of `A`, coming directly from the characteristic polynomial.
+
+## 2. Interlacing as a list predicate
+
+```lean
+/--
+A predicate asserting that list M interlaces list L.
+-/
+def interlacing (L M : List ℝ) : Prop :=
+  L.length = M.length + 1 ∧
+  ∀ i : Fin M.length, L[i]! ≤ M[i]! ∧ M[i]! ≤ L[i.1 + 1]!
+```
+
+**Definition.** The predicate says:
+
+- `L` has one more element than `M`.
+- Each element of `M` lies between consecutive elements of `L`.
+
+Concretely, if `L = [λ₀, λ₁, ..., λₙ]` and `M = [μ₀, ..., μ_{n-1}]`, then
+
+```
+λ₀ ≤ μ₀ ≤ λ₁ ≤ μ₁ ≤ ... ≤ λ_{n-1} ≤ μ_{n-1} ≤ λₙ.
+```
+
+**Lean indexing details.**
+- `L[i]!` means "the `i`-th entry of `L`", using `get!` (which is safe here because the lengths line up).
+- `i : Fin M.length` is a finite index guaranteed to be in bounds.
+
+This is the standard formalization of interlacing for ordered lists.
+
+## 3. Symmetric vs. Hermitian (over `ℝ`)
+
+```lean
+/--
+A real matrix is symmetric if and only if it is Hermitian.
+-/
+theorem isSymm_iff_isHermitian_real {n : Type*} [Fintype n] (A : Matrix n n ℝ) :
+  A.IsSymm ↔ A.IsHermitian := by
+  rw [Matrix.IsSymm, Matrix.IsHermitian, Matrix.conjTranspose, Matrix.transpose]
+  simp
+  rfl
+```
+
+**Idea.** In real matrices, conjugate transpose is just transpose, so "Hermitian" is the same as "symmetric." The proof unfolds definitions and simplifies.
+
+This lemma is crucial because many spectral theorems in mathlib are stated for Hermitian matrices, but we want to apply them to symmetric real matrices.
+
+## 4. Sorted eigenvalues for symmetric matrices
+
+```lean
+/--
+The sorted eigenvalues of a symmetric matrix.
+-/
+noncomputable def sorted_eigenvalues {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) : List ℝ :=
+  let hA' : A.IsHermitian := (isSymm_iff_isHermitian_real A).mp hA
+  (List.ofFn (hA'.eigenvalues)).mergeSort (· ≤ ·)
+```
+
+**Idea.** For symmetric (Hermitian) matrices, mathlib gives a function `eigenvalues` that returns the eigenvalues as a function `Fin n → ℝ`. We convert this function to a list using `List.ofFn` and sort with `mergeSort`.
+
+- `hA'` is the same matrix, but typed as Hermitian.
+- `mergeSort` produces a sorted list of length `n`.
+
+This definition is the "canonical" sorted eigenvalue list for symmetric real matrices.
+
+## 5. Length of the sorted eigenvalue list
+
+```lean
+/--
+The number of sorted eigenvalues is n.
+-/
+theorem sorted_eigenvalues_length {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
+  (sorted_eigenvalues A hA).length = n := by
+    unfold sorted_eigenvalues; aesop;
+```
+
+**Idea.** The list produced from `Fin n → ℝ` has exactly `n` entries. After sorting, the length is preserved, so the result remains `n`.
+
+The proof uses `aesop` to discharge the bookkeeping automatically.
+
+## 6. Symmetry and the dot product
+
+```lean
+/--
+For a symmetric matrix A, <Ax, y> = <x, Ay>.
+-/
+theorem dotProduct_mulVec_symm {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) (x y : Fin n → ℝ) :
+  dotProduct (A.mulVec x) y = dotProduct x (A.mulVec y) := by
+    simp +decide [ Matrix.mulVec, dotProduct, mul_comm ];
+    simp +decide only [Finset.mul_sum _ _ _, mul_left_comm, mul_comm];
+    rw [ Finset.sum_comm ];
+    conv_rhs => rw [ ← hA ] ;
+    rfl
+```
+
+**Idea.** Symmetric matrices are self-adjoint, so they can "move" between slots of the dot product. This lemma is a concrete dot-product identity that is frequently used when proving variational characterizations of eigenvalues.
+
+The proof is a sequence of algebraic rewrites: expand the dot product, commute sums, and use the symmetry `hA` to swap indices.
+
+## 7. Where this is headed
+
+The file ends with a comment marker:
+
+```lean
+/--
+The max-min value for the k-th eigenvalue.
+-/
+```
+
+This indicates the next step: a max-min (or min-max) characterization of eigenvalues (the Courant--Fischer theorem). With the definitions here, one can state and prove interlacing results for eigenvalues of principal submatrices or rank-one updates.
+
+## Summary
+
+- `sorted_eigenvalues_list` sorts roots of the characteristic polynomial.
+- `interlacing` formalizes the classic eigenvalue interlacing pattern.
+- `isSymm_iff_isHermitian_real` bridges symmetric and Hermitian worlds.
+- `sorted_eigenvalues` extracts eigenvalues of symmetric matrices and sorts them.
+- `sorted_eigenvalues_length` and `dotProduct_mulVec_symm` are foundational lemmas for variational principles.
+
+These pieces form the Lean infrastructure for talking about ordered eigenvalues and their interlacing behavior.
+
+---
+
+This section defines the min–max eigenvalue of a real symmetric matrix and proves two key spectral facts:
+
+- the list of sorted eigenvalues is just a permutation of the (unsorted) eigenvalues, and
+- there is an orthonormal eigenbasis aligned with the sorted eigenvalues.
+
+We also record that the Euclidean inner product is the same as `dotProduct` in Lean.
+
+Throughout, `A : Matrix (Fin n) (Fin n) ℝ` is a real matrix and `hA : A.IsSymm` means `A` is symmetric.
+
+---
+
+## 1. The min–max eigenvalue (Rayleigh–Ritz form)
+
+Lean definition:
+
+```lean
+def min_max_eigenvalue {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (k : ℕ) : ℝ :=
+  ⨆ (C : Submodule ℝ (Fin n → ℝ)) (_ : Module.finrank ℝ C = k + 1),
+    ⨅ (x : {x : C // dotProduct (x : Fin n → ℝ) (x : Fin n → ℝ) = 1}),
+      dotProduct (A.mulVec (x : Fin n → ℝ)) (x : Fin n → ℝ)
+```
+
+**What this means** (mathematically):
+
+- You look at all subspaces `C` of dimension `k+1`.
+- In each subspace, you take the **minimum** of the Rayleigh quotient over unit vectors `x` in `C`.
+- Then you take the **maximum** of those minima over all such subspaces.
+
+This is the classical min–max characterization of the `k`-th eigenvalue for symmetric matrices.
+
+Key Lean ideas:
+
+- `⨆` and `⨅` are `iSup` and `iInf`, the supremum and infimum operators.
+- `Module.finrank ℝ C = k + 1` enforces the subspace dimension.
+- The unit sphere in `C` is encoded as a subtype `x : {x : C // dotProduct x x = 1}`.
+- The Rayleigh quotient is just `dotProduct (A.mulVec x) x` for real symmetric matrices.
+
+---
+
+## 2. Sorted eigenvalues are a permutation of eigenvalues
+
+Lemma (paraphrased):
+
+> The list `sorted_eigenvalues A hA` is a permutation of the standard eigenvalue list of `A`.
+
+Lean statement:
+
+```lean
+lemma sorted_eigenvalues_is_perm {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
+  ∃ σ : Equiv.Perm (Fin n), ∀ (i : Fin n),
+    (sorted_eigenvalues A hA).get ⟨i, ...⟩ =
+    Matrix.IsHermitian.eigenvalues ((isSymm_iff_isHermitian_real A).mp hA) (σ i)
+```
+
+There exists a permutation `σ : Equiv.Perm (Fin n)` that maps the sorted eigenvalues to the standard eigenvalue list.
+
+**Proof idea**:
+
+1. `sorted_eigenvalues` is defined as a merge sort of the eigenvalues list, so it is a permutation.
+2. A generic lemma shows: if two lists are permutations, then there is a bijection between their indices that matches entries.
+3. That bijection is transported to a permutation of `Fin n` using length equalities.
+
+**Why this matters**:
+
+This gives a precise index map `σ` so you can connect the *sorted* eigenvalue list to the *original* eigenvalue list. It is a technical bridge for reindexing eigenvectors.
+
+---
+
+## 3. Orthonormal basis aligned to the sorted eigenvalues
+
+Lemma (paraphrased):
+
+> There is an orthonormal basis `v` of eigenvectors such that the eigenvalue of `v i` is exactly the `i`-th sorted eigenvalue.
+
+Lean statement:
+
+```lean
+lemma exists_orthonormal_basis_sorted {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (hA : A.IsSymm) :
+  ∃ (v : OrthonormalBasis (Fin n) ℝ (EuclideanSpace ℝ (Fin n))),
+    ∀ i, A.mulVec (v i) =
+      ((sorted_eigenvalues A hA).get ⟨i, ...⟩) • (v i)
+```
+
+Here `•` is scalar multiplication in the vector space.
+
+**Proof idea**:
+
+1. The spectral theorem already provides an orthonormal eigenbasis indexed by the *unsorted* eigenvalues.
+2. Using the permutation `σ` from the previous lemma, reindex that basis so the `i`-th basis vector corresponds to the `i`-th sorted eigenvalue.
+3. The lemma uses `v.reindex σ.symm` to align the ordering.
+
+**Takeaway**:
+
+For symmetric matrices, not only do eigenvalues exist and are real, but you can order them and still have an orthonormal basis of eigenvectors in that order.
+
+---
+
+## 4. Inner product equals dot product
+
+Lean lemma:
+
+```lean
+lemma inner_eq_dotProduct {n : ℕ} (x y : EuclideanSpace ℝ (Fin n)) :
+  inner ℝ x y = dotProduct (x : Fin n → ℝ) (y : Fin n → ℝ) := by
+    simp +decide [ dotProduct, inner ];
+    ac_rfl
+```
+
+This is a small but important bridge: `EuclideanSpace` in mathlib is defined using the dot product on functions `Fin n → ℝ`. The lemma tells Lean (and the reader) that the abstract inner product agrees with the concrete dot product formula.
+
+---
+
+## How these pieces fit together
+
+- The **min–max eigenvalue** definition uses the Rayleigh quotient, which relies on the **dot product**.
+- The **permutation lemma** formalizes that sorted eigenvalues are just a reordering of the standard list.
+- The **orthonormal basis lemma** uses that permutation to reorder eigenvectors so each basis vector matches the sorted eigenvalue at the same index.
+
+Altogether, this section is a Lean formalization of the spectral theorem framework needed for min–max eigenvalue proofs.

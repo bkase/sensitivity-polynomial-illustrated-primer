@@ -1746,196 +1746,68 @@ interface LeanSection {
 // Full Lean code organized by section with detailed explanations
 const leanSections: LeanSection[] = [
   {
-    id: "imports",
-    title: "Imports & Setup",
-    description: "The Harmonic tactic infrastructure and Lean setup, including imports, options, and classical reasoning.",
+    id: "core-definitions",
+    title: "Core definitions",
+    description: "Sensitivity, Fourier coefficients, and degree for Boolean functions.",
     sectionNumber: 1,
     lineStart: 0,
-    lineEnd: 233,
+    lineEnd: 280,
   },
   {
-    id: "sensitivity-def",
-    title: "Sensitivity Definition",
-    description: "The formal definition of sensitivity: the maximum number of single-bit flips that can change the output.",
+    id: "equivalences-huang",
+    title: "Equivalences and Huang matrix definition",
+    description: "Type equivalences for reindexing and the recursive definition of the Huang matrix.",
     sectionNumber: 2,
-    lineStart: 234,
-    lineEnd: 239,
+    lineStart: 281,
+    lineEnd: 359,
   },
   {
-    id: "chi-def",
-    title: "Parity Character χ",
-    description: "The parity character χ_S(x) = (-1)^|{i ∈ S : x_i = 1}| — the building block for Fourier analysis.",
+    id: "spectral-prelim",
+    title: "Spectral preliminaries",
+    description: "A² = nI, eigenvalue characterization, and min-max eigenvalue theory.",
     sectionNumber: 3,
-    lineStart: 240,
-    lineEnd: 245,
+    lineStart: 360,
+    lineEnd: 561,
   },
   {
-    id: "fourier-degree",
-    title: "Fourier Coefficients & Degree",
-    description: "The Fourier coefficient f̂(S) and degree — measuring the 'complexity' of a Boolean function.",
+    id: "huang-reindex",
+    title: "Huang matrix reindexing and eigen-structure",
+    description: "Reindexing to Fin(2^n), g-transform expectation, and complete spectrum.",
     sectionNumber: 4,
-    lineStart: 246,
-    lineEnd: 254,
+    lineStart: 562,
+    lineEnd: 854,
   },
   {
-    id: "equivalences",
-    title: "Index Equivalences",
-    description: "Type equivalences for reindexing the hypercube, enabling the block matrix construction.",
+    id: "spectral-bounds",
+    title: "Spectral bounds and interlacing",
+    description: "Rayleigh quotients, Courant-Fischer, eigenvalue interlacing, and submatrix bounds.",
     sectionNumber: 5,
-    lineStart: 255,
-    lineEnd: 287,
-  },
-  {
-    id: "huang-matrix",
-    title: "Huang Matrix Definition",
-    description: "The Huang matrix A_n defined recursively with block structure [A_{n-1}, I; I, -A_{n-1}].",
-    sectionNumber: 6,
-    lineStart: 288,
-    lineEnd: 296,
-  },
-  {
-    id: "huang-matrix-sq",
-    title: "A² = nI",
-    description: "The key algebraic property: the Huang matrix squared equals n times the identity.",
-    sectionNumber: 7,
-    lineStart: 297,
-    lineEnd: 314,
-  },
-  {
-    id: "eigenvalues",
-    title: "Eigenvalue Characterization",
-    description: "Since A² = nI, every eigenvalue μ satisfies μ² = n, so eigenvalues are ±√n.",
-    sectionNumber: 8,
-    lineStart: 315,
-    lineEnd: 330,
-  },
-  {
-    id: "sorted-eigenvalues",
-    title: "Sorted Eigenvalues Infrastructure",
-    description: "Infrastructure for working with sorted eigenvalues and the interlacing property.",
-    sectionNumber: 9,
-    lineStart: 331,
-    lineEnd: 377,
-  },
-  {
-    id: "spectral-theory",
-    title: "Min-Max Eigenvalue Theory",
-    description: "The Courant-Fischer min-max characterization of eigenvalues and Rayleigh quotients.",
-    sectionNumber: 10,
-    lineStart: 378,
-    lineEnd: 528,
-  },
-  {
-    id: "g-expectation",
-    title: "g-Transform Expectation",
-    description: "The expectation of g = f · χ_{[n]} is nonzero when f has full degree.",
-    sectionNumber: 11,
-    lineStart: 529,
-    lineEnd: 541,
-  },
-  {
-    id: "huang-fin",
-    title: "Reindexed Huang Matrix",
-    description: "Reindexing the Huang matrix to Fin(2^n) for compatibility with matrix theory.",
-    sectionNumber: 12,
-    lineStart: 542,
-    lineEnd: 598,
-  },
-  {
-    id: "spectrum-theorem",
-    title: "Complete Spectrum",
-    description: "The full spectrum: 2^{n-1} copies each of -√n and +√n.",
-    sectionNumber: 13,
-    lineStart: 599,
-    lineEnd: 819,
-  },
-  {
-    id: "adjacency",
-    title: "Adjacency & Row Sum Bounds",
-    description: "The absolute value of the Huang matrix is the hypercube adjacency matrix; eigenvalue bounds from row sums.",
-    sectionNumber: 14,
-    lineStart: 820,
-    lineEnd: 907,
-  },
-  {
-    id: "spectral-bound",
-    title: "Spectral Radius Bound",
-    description: "The spectral radius is bounded by the maximum degree of the underlying graph.",
-    sectionNumber: 15,
-    lineStart: 908,
-    lineEnd: 935,
-  },
-  {
-    id: "rayleigh",
-    title: "Rayleigh Quotient & Courant-Fischer",
-    description: "The Rayleigh quotient R_A(x) = ⟨x,Ax⟩/⟨x,x⟩ and variational characterization of eigenvalues.",
-    sectionNumber: 16,
-    lineStart: 936,
-    lineEnd: 1274,
-  },
-  {
-    id: "interlacing",
-    title: "Eigenvalue Interlacing",
-    description: "Principal submatrices inherit eigenvalues via the interlacing theorem — key for the proof!",
-    sectionNumber: 17,
-    lineStart: 1275,
-    lineEnd: 1353,
-  },
-  {
-    id: "huang-submatrix",
-    title: "Huang Submatrix Eigenvalue Bound",
-    description: "Large submatrices (> 2^{n-1}) of the Huang matrix have max eigenvalue ≥ √n.",
-    sectionNumber: 18,
-    lineStart: 1354,
-    lineEnd: 1384,
-  },
-  {
-    id: "g-value",
-    title: "g-Value and Level Sets",
-    description: "The g-transform g(x) = f(x)·χ_{[n]}(x) and level sets S⁺, S⁻ where g = ±1.",
-    sectionNumber: 19,
-    lineStart: 1385,
-    lineEnd: 1439,
+    lineStart: 855,
+    lineEnd: 1367,
   },
   {
     id: "level-sets",
-    title: "Large Level Set Existence",
-    description: "Since Σg ≠ 0 when f has full degree, one of S⁺ or S⁻ must have > 2^{n-1} elements.",
-    sectionNumber: 20,
-    lineStart: 1440,
-    lineEnd: 1462,
+    title: "Level-set combinatorics",
+    description: "The g-transform, level sets S⁺ and S⁻, and why one must be large.",
+    sectionNumber: 6,
+    lineStart: 1368,
+    lineEnd: 1470,
   },
   {
     id: "hypercube-graph",
-    title: "Hypercube Graph & Properties",
+    title: "Hypercube graph and adjacency bridge",
     description: "The hypercube graph Q_n and its connection to the Huang matrix and sensitivity.",
-    sectionNumber: 21,
-    lineStart: 1463,
-    lineEnd: 1803,
+    sectionNumber: 7,
+    lineStart: 1471,
+    lineEnd: 1683,
   },
   {
-    id: "restriction",
-    title: "Restriction to Subcubes",
-    description: "Restricting a Boolean function to a subcube by fixing some coordinates.",
-    sectionNumber: 22,
-    lineStart: 1804,
-    lineEnd: 1851,
-  },
-  {
-    id: "sensitivity-mono",
-    title: "Sensitivity Monotonicity",
-    description: "Sensitivity cannot increase under restriction: s(f) ≥ s(f|_S).",
-    sectionNumber: 23,
-    lineStart: 1852,
-    lineEnd: 1901,
-  },
-  {
-    id: "conjecture",
-    title: "The Sensitivity Conjecture",
-    description: "The final theorem: s(f) ≥ √deg(f) for all Boolean functions f.",
-    sectionNumber: 24,
-    lineStart: 1902,
-    lineEnd: 1935,
+    id: "full-degree",
+    title: "Full-degree case (core bound)",
+    description: "Restriction to subcubes, sensitivity monotonicity, and the final theorem.",
+    sectionNumber: 8,
+    lineStart: 1684,
+    lineEnd: 2163,
   },
 ];
 
@@ -3900,31 +3772,16 @@ function LeanProofSection() {
   // Line ranges for each section in the displayed code (24 sections matching leanSections)
   // fullLeanCode has 1936 lines (0-1935), including Harmonic tactic infrastructure
   // IMPORTANT: Ranges must be CONTIGUOUS to avoid skipping sections when scrolling
+  // Generated from section-config.ts - run `bun generate-section-arrays.ts` to regenerate
   const sectionLineRanges: [number, number][] = [
-    [0, 236],      // 1. imports - Harmonic tactic infrastructure + imports/setup
-    [237, 242],    // 2. sensitivity - def sensitivity
-    [243, 248],    // 3. chi - def chi
-    [249, 257],    // 4. fourier/degree - fourier_coeff and degree
-    [258, 290],    // 5. equivalences - boolProdEquivSum, finSuccEquiv, finSuccEquiv_huang
-    [291, 299],    // 6. huang matrix def - def huang_matrix
-    [300, 317],    // 7. huang_matrix_sq - theorem huang_matrix_sq
-    [318, 333],    // 8. eigenvalues - huang_matrix_eigenvalues
-    [334, 380],    // 9. sorted eigenvalues - sorted_eigenvalues_list, interlacing, sorted_eigenvalues
-    [381, 531],    // 10. spectral theory - min_max_eigenvalue, courant_fischer, rayleigh
-    [532, 544],    // 11. g_expectation - g_expectation_nonzero
-    [545, 601],    // 12. huang_fin - boolFunEquivFin, huang_matrix_fin, symmetry
-    [602, 822],    // 13. spectrum-theorem - huang_eigenvalues_sq_eq_n and related lemmas
-    [823, 910],    // 14. adjacency - abs_huang_eq_adjacency, eigenvalue_le_max_row_sum
-    [911, 938],    // 15. spectral-bound - spectral_radius_bound
-    [939, 1277],   // 16. rayleigh - rayleigh_quotient and Courant-Fischer theory
-    [1278, 1356],  // 17. interlacing - eigenvalue_interlacing_max
-    [1357, 1387],  // 18. huang-submatrix - huang_submatrix_max_eigenvalue_ge_sqrt_n
-    [1388, 1442],  // 19. g-value - g_val, S_pos, S_neg definitions
-    [1443, 1465],  // 20. level-sets - exists_large_level_set
-    [1466, 1806],  // 21. hypercube-graph - hypercube_graph and properties
-    [1807, 1854],  // 22. restriction - def restriction and related
-    [1855, 1904],  // 23. sensitivity-mono - sensitivity_restriction_le
-    [1905, 1935],  // 24. conjecture - sensitivity_conjecture
+    [0, 280],  // 1. Core definitions
+    [281, 359],  // 2. Equivalences and Huang matrix definition
+    [360, 561],  // 3. Spectral preliminaries
+    [562, 854],  // 4. Huang matrix reindexing and eigen-structure
+    [855, 1367],  // 5. Spectral bounds and interlacing
+    [1368, 1470],  // 6. Level-set combinatorics
+    [1471, 1683],  // 7. Hypercube graph and adjacency bridge
+    [1684, 2163],  // 8. Full-degree case (core bound)
   ];
 
   // Intersection observer to track which section is visible (scroll-based detection)

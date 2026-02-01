@@ -1,160 +1,268 @@
-# Section 2: Sensitivity in Lean
+# Section 2: Equivalences and Huang matrix definition
 
-This section defines the *sensitivity* of a Boolean function — the central concept in the Sensitivity Conjecture.
 
-## What sensitivity measures
+---
 
-For a Boolean function \(f : \{0,1\}^n \to \{0,1\}\), the **sensitivity** of `f` is the maximum, over all inputs `x`, of how many single-bit flips change the output. Informally:
+This section defines three explicit type equivalences in Lean. They are not just abstract conveniences: they are exactly the "index bookkeeping" needed to describe the recursive block structure of the Huang matrix when rows/columns are indexed by Boolean hypercube vertices.
 
-- Fix an input `x`.
-- Flip exactly one coordinate to get a neighbor `y`.
-- Count how many such neighbors change `f`'s value.
-- Sensitivity is the maximum of that count over all `x`.
+Below is what each definition does, how it works, and why it matters for the Huang matrix.
 
-So sensitivity measures how locally "fragile" the function is: if many one-bit changes flip the output, `f` is highly sensitive at that input.
+---
 
-## The Lean definition
+## 1) `boolProdEquivSum_custom` : `Bool × α ≃ α ⊕ α`
 
-The code in this section is:
-
+**Lean definition**
 ```lean
-def sensitivity {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
-  Finset.sup Finset.univ (fun x =>
-    Finset.card
-      (Finset.filter
-        (fun y =>
-          (Finset.card (Finset.filter (fun i => x i ≠ y i) Finset.univ) = 1)
-          ∧ f x ≠ f y)
-        Finset.univ))
+def boolProdEquivSum_custom {α : Type*} : Bool × α ≃ α ⊕ α where
+  toFun := fun p => if p.1 then Sum.inr p.2 else Sum.inl p.2
+  invFun := fun s => match s with
+    | Sum.inl a => (false, a)
+    | Sum.inr a => (true, a)
+  left_inv := by
+    rintro ⟨ _ | _, _ ⟩ <;> simp +decide
+  right_inv := by
+    rintro (a | a) <;> rfl
 ```
 
-Let's unpack this in pieces.
+### What it means
+- A pair `(b, a)` with `b : Bool` and `a : α` can be seen as **"choose left or right copy of α"** depending on `b`.
+- Thus `Bool × α` is equivalent to `α ⊕ α` (a sum of two copies of `α`).
 
-### Term-level definition (no tactics)
+### How it works
+- **Forward map**: send `(true, a)` to `Sum.inr a` and `(false, a)` to `Sum.inl a`.
+- **Inverse map**: send `Sum.inl a` back to `(false, a)`, and `Sum.inr a` back to `(true, a)`.
+- The proofs `left_inv` and `right_inv` show these two functions undo each other.
 
-This snippet is written entirely in **term mode** (a direct expression), not in tactic mode. There are **no tactics** here — no `by`, `simp`, `linarith`, etc. Everything is a nested expression that Lean can typecheck without any proof scripting.
+### Why it matters
+When you split the Boolean hypercube by the first coordinate, every vertex is "either in the 0-slice or the 1-slice." The sum type `α ⊕ α` captures exactly this "either/or" split, which is perfect for block matrices: the two summands correspond to two diagonal blocks.
 
-### Types and inputs
+---
 
-- `n : ℕ` is the input size.
-- An input vector `x` is represented as a function `Fin n → Bool`, i.e., a Boolean value for each index `0, 1, ..., n-1`.
-- The Boolean function is `f : (Fin n → Bool) → Bool`.
+## 2) `finSuccEquiv_custom` : `(Fin (n+1) → α) ≃ α × (Fin n → α)`
 
-**Correspondence with standard notation**: In the mathematical literature, inputs are elements of `{0,1}^n`. In Lean, we use `Fin n → Bool` with the convention:
-- `false` corresponds to `0`
-- `true` corresponds to `1`
-
-So a Boolean vector like `(0, 1, 1, 0)` becomes the function `fun i => if i = 1 ∨ i = 2 then true else false`.
-
-### Finsets and `Finset.univ`
-
-Lean uses finite sets (`Finset`) to quantify over all elements of a finite type. Here:
-
-- `Finset.univ` over `Fin n → Bool` is the set of all Boolean vectors of length `n`.
-- `Finset.univ` over `Fin n` is the set of all indices `0..n-1`.
-- `Finset` is a data type for finite sets with decidable equality; it carries a list-like representation plus proofs that duplicates are removed.
-
-**Why this works**: Lean knows that `Fin n → Bool` is a finite type via the `Fintype` instance for function types. Specifically, `Fintype.card (Fin n → Bool) = 2^n` because there are 2 choices (true/false) for each of the `n` positions. This instance allows `Finset.univ` to enumerate all `2^n` Boolean vectors.
-
-### Counting Hamming distance 1
-
-Inside the definition, this fragment:
-
+**Lean definition**
 ```lean
-Finset.card (Finset.filter (fun i => x i ≠ y i) Finset.univ)
+def finSuccEquiv_custom (n : ℕ) (α : Type*) : (Fin (n + 1) → α) ≃ α × (Fin n → α) where
+  toFun f := (f 0, f ∘ Fin.succ)
+  invFun p := Fin.cons p.1 p.2
+  left_inv f := by
+    ext i
+    refine Fin.cases ?_ ?_ i <;> simp
+  right_inv p := by
+    ext <;> simp
 ```
 
-counts the number of indices `i` where `x i` differs from `y i`. This is the Hamming distance between `x` and `y`.
+### What it means
+- A function `f : Fin (n+1) → α` is completely determined by:
+  1) its value at `0`, and
+  2) its values on the remaining indices `{1, …, n}` (which are in bijection with `Fin n`).
+- So such a function is equivalent to a pair `(α, Fin n → α)`.
 
-The condition
+### How it works
+- **Forward map**: `f ↦ (f 0, f ∘ Fin.succ)`.
+  - `Fin.succ : Fin n → Fin (n+1)` is the canonical injection that maps `i` to `i+1`.
+  - So `f ∘ Fin.succ` is the "tail" of `f`, giving values at indices `1, 2, ..., n`.
+- **Inverse map**: `Fin.cons p.1 p.2` rebuilds a function from a head value `p.1` and tail `p.2`.
+  - `Fin.cons : α → (Fin n → α) → (Fin (n+1) → α)` prepends a head to a tail.
+- The proof uses `Fin.cases` to split the index into "zero" vs. "successor."
 
+### Why it matters
+Vertices of the Boolean hypercube of dimension `n+1` are functions `Fin (n+1) → Bool`. This equivalence lets you pull out the first coordinate explicitly as a separate piece. It is the fundamental "peel off the first bit" operation.
+
+---
+
+## 3) `finSuccEquiv_huang_custom` : `(Fin (n+1) → Bool) ≃ (Fin n → Bool) ⊕ (Fin n → Bool)`
+
+**Lean definition**
 ```lean
-(... = 1)
+def finSuccEquiv_huang_custom (n : ℕ) : (Fin (n + 1) → Bool) ≃ (Fin n → Bool) ⊕ (Fin n → Bool) :=
+  Equiv.trans
+    (finSuccEquiv_custom n Bool)
+    (boolProdEquivSum_custom)
 ```
 
-forces `y` to differ from `x` in exactly one coordinate.
+### What it means
+This simply **composes** the previous two equivalences:
+1) First, split a Boolean function on `Fin (n+1)` into `(Bool, Fin n → Bool)`.
+2) Then turn `(Bool, Fin n → Bool)` into a sum of two copies of `Fin n → Bool`.
 
-### Counting sensitive neighbors
+So we get a clean equivalence:
 
-The inner filter is:
-
-```lean
-Finset.filter (fun y => (distance = 1) ∧ f x ≠ f y) Finset.univ
+```
+(Fin (n+1) → Bool)  ≃  (Fin n → Bool) ⊕ (Fin n → Bool)
 ```
 
-So for a fixed `x`, it keeps all `y` with Hamming distance 1 from `x` and where `f` flips value. Then:
+**Summand ordering convention**: The composition sends:
+- `(false, tail)` to `Sum.inl tail` — the "left" or "top" block
+- `(true, tail)` to `Sum.inr tail` — the "right" or "bottom" block
 
-```lean
-Finset.card (...)
+This means vertices with first coordinate `false` go to `Sum.inl`, and vertices with first coordinate `true` go to `Sum.inr`. This ordering determines which block of the matrix corresponds to which summand.
+
+`Equiv.trans` composes equivalences: if `e₁ : A ≃ B` and `e₂ : B ≃ C`, then `Equiv.trans e₁ e₂ : A ≃ C`.
+
+### Why it matters for the Huang matrix
+The Huang matrix `A_n` is indexed by Boolean hypercube vertices, i.e.
+
+```
+indices_n := Fin n → Bool
 ```
 
-counts how many such `y` exist. This is the **sensitivity of `f` at `x`**.
+The recursion for `A_{n+1}` is a **block matrix** with four `2^n × 2^n` blocks:
 
-### Taking the maximum
+- top-left: `A_n`
+- top-right: `I`
+- bottom-left: `I`
+- bottom-right: `-A_n`
 
-Finally,
+To even *state* this block structure in Lean, you must identify the index set for dimension `n+1` with **two copies** of the index set for dimension `n`.
 
-```lean
-Finset.sup Finset.univ (fun x => ...)
+That is exactly what `finSuccEquiv_huang_custom` gives you:
+
+```
+indices_{n+1}  ≃  indices_n ⊕ indices_n
 ```
 
-computes the supremum of that count across all inputs `x`. This yields the overall sensitivity of `f`.
+Once you have this equivalence, you can:
+- reindex rows and columns of `A_{n+1}` into "upper" and "lower" halves,
+- align those halves with the two copies of `indices_n`, and
+- express the recursion as a block matrix in a type-correct way.
 
-**Technical note on `Finset.sup`**: This is the lattice supremum operation. For natural numbers (`ℕ`), the lattice supremum is simply the maximum. The function `Finset.sup` requires a `SemilatticeSup` instance with a bottom element `⊥`; for `ℕ`, this bottom is `0`. If the set is empty, `Finset.sup` returns `⊥ = 0`. For nonempty sets, you could equivalently use `Finset.sup'` which doesn't need the bottom element but requires a nonemptiness proof.
+Without this explicit equivalence, the block recursion is only informal. With it, Lean can treat `A_{n+1}` as a matrix indexed by a sum type and accept the block decomposition.
 
-## Worked example: the OR function
-
-Let `n = 3` and define `f` to be the OR function:
-
-```lean
-def or3 : (Fin 3 → Bool) → Bool := fun x => x 0 || x 1 || x 2
-```
-
-In standard notation, `or3(x₀, x₁, x₂) = x₀ ∨ x₁ ∨ x₂`, which is `true` if any bit is `true`.
-
-**Analyzing sensitivity at each input:**
-
-- `x = (false, false, false)` (the all-zeros input):
-  - Neighbors are `(true, false, false)`, `(false, true, false)`, `(false, false, true)`
-  - All three neighbors have `or3 = true`, while `or3 x = false`
-  - So sensitivity at this input is **3**
-
-- `x = (true, true, true)` (the all-ones input):
-  - Neighbors are `(false, true, true)`, `(true, false, true)`, `(true, true, false)`
-  - All three neighbors still have `or3 = true`, same as `or3 x = true`
-  - So sensitivity at this input is **0**
-
-- `x = (true, false, false)`:
-  - Neighbors: `(false, false, false)` has `or3 = false` ≠ `or3 x = true` ✓
-  - Neighbors: `(true, true, false)` and `(true, false, true)` have `or3 = true` = `or3 x`
-  - So sensitivity at this input is **1**
-
-The maximum over all 8 inputs is **3**, achieved at the all-zeros input. Thus `sensitivity or3 = 3`.
-
-In Lean, the definition enumerates all `x : Fin 3 → Bool` (8 inputs), counts sensitive neighbors for each, and takes the maximum via `Finset.sup`.
-
-## Formal mathematical definition
-
-For completeness, here is the standard mathematical definition that the Lean code encodes:
-
-**Definition**: The **sensitivity at input \(x\)** is:
-\[
-s(f, x) = |\{i \in [n] : f(x) \neq f(x^{\oplus i})\}|
-\]
-where \(x^{\oplus i}\) denotes \(x\) with the \(i\)-th bit flipped.
-
-**Definition**: The **sensitivity of \(f\)** is:
-\[
-s(f) = \max_{x \in \{0,1\}^n} s(f, x)
-\]
-
-The Lean definition directly implements this: `Finset.filter` computes the set \(\{i : f(x) \neq f(x^{\oplus i})\}\), `Finset.card` computes its cardinality, and `Finset.sup` computes the maximum.
+---
 
 ## Summary
+- `boolProdEquivSum_custom` turns a Boolean choice into a sum type.
+- `finSuccEquiv_custom` peels off the first coordinate of a function on `Fin (n+1)`.
+- `finSuccEquiv_huang_custom` combines both to split the Boolean hypercube into two copies of the `n`-dimensional hypercube.
 
-- The definition computes the maximum number of one-bit flips that change \(f\).
-- It uses `Finset.univ` to enumerate all inputs and all indices.
-- The Hamming distance test `= 1` enforces single-bit flips.
-- The final `Finset.sup` takes the maximum over all inputs.
+This is precisely the indexing trick needed to define the Huang matrix recursion as a block matrix in Lean.
 
-This is a direct, faithful Lean translation of the standard mathematical definition of sensitivity.
+---
+
+This section defines a family of matrices `huang_matrix (n : ℕ)` over `ℝ` indexed by Boolean vectors of length `n`.
+
+```lean
+def huang_matrix (n : ℕ) : Matrix (Fin n → Bool) (Fin n → Bool) ℝ :=
+  match n with
+  | 0 => 0
+  | n + 1 => Matrix.reindex (finSuccEquiv_huang_custom n).symm (finSuccEquiv_huang_custom n).symm
+      (Matrix.fromBlocks (huang_matrix n) (1 : Matrix _ _ ℝ) (1 : Matrix _ _ ℝ) (-huang_matrix n))
+```
+
+## 1. What the type says
+
+`Matrix (Fin n → Bool) (Fin n → Bool) ℝ` is a square matrix whose rows and columns are indexed by functions `Fin n → Bool`, i.e. Boolean vectors of length `n`.
+
+So for each `n`, `huang_matrix n` is a `2^n × 2^n` real matrix, but it is indexed by *functions* rather than integer indices.
+
+**Why 2^n?** The type `Fin n → Bool` is a function type with `2^n` elements: there are 2 choices (true/false) for each of the `n` positions. Lean's `Fintype` instance computes `Fintype.card (Fin n → Bool) = 2^n` via `Fintype.card_pi`.
+
+## 2. Base case: `n = 0`
+
+```lean
+| 0 => 0
+```
+
+When `n = 0`, the index type `Fin 0 → Bool` has exactly one element (the empty function), so the matrix is `1 × 1`. The definition returns `0`, the zero matrix of that size.
+
+**Note**: This means `H_0 = [0]`, the 1×1 zero matrix. This satisfies `H_0² = 0·I` (since 0² = 0 and 0·I = 0 for the 1×1 identity). The formula `H_n² = n·I` holds with `n = 0`.
+
+## 3. Recursive case: `n + 1`
+
+```lean
+| n + 1 => Matrix.reindex ... (Matrix.fromBlocks ...)
+```
+
+The recursive step builds `huang_matrix (n+1)` as a **2×2 block matrix**, where each block is itself a matrix indexed by Boolean vectors of length `n`.
+
+### 3.1 The block structure
+
+The key expression is:
+
+```lean
+Matrix.fromBlocks (huang_matrix n) (1 : Matrix _ _ ℝ)
+                  (1 : Matrix _ _ ℝ) (-huang_matrix n)
+```
+
+`Matrix.fromBlocks A B C D` builds the block matrix
+
+```
+[ A  B ]
+[ C  D ]
+```
+
+Here:
+
+- `A` is `huang_matrix n`
+- `D` is `-huang_matrix n`
+- `B` and `C` are both `1`, the identity matrix of appropriate size
+
+**Lean notation**: In Lean's matrix library, `1 : Matrix α α R` denotes the identity matrix (diagonal 1s, off-diagonal 0s), not the all-ones matrix. This is the multiplicative identity in the matrix ring.
+
+So the recursive definition is:
+
+```
+H_{n+1} = [  H_n     I ]
+          [   I   -H_n ]
+```
+
+This is a classic recursive block construction, similar in spirit to Hadamard-type recurrences but with identity matrices on the off-diagonals and a sign flip on the bottom-right block.
+
+### 3.2 Where the indices live
+
+`fromBlocks` naturally produces a matrix indexed by a *sum type* of indices:
+
+```
+(Fin n → Bool) ⊕ (Fin n → Bool)
+```
+
+That is, it expects row and column indices to be either a "left" index (top block) or a "right" index (bottom block).
+
+But we want the final result indexed by `Fin (n+1) → Bool` (Boolean vectors of length `n+1`).
+
+### 3.3 Reindexing with an equivalence
+
+That is why we wrap the block matrix with `Matrix.reindex`:
+
+```lean
+Matrix.reindex (finSuccEquiv_huang_custom n).symm
+               (finSuccEquiv_huang_custom n).symm
+               (Matrix.fromBlocks ...)
+```
+
+- `finSuccEquiv_huang_custom n` is an equivalence between
+  `Fin (n+1) → Bool` and `(Fin n → Bool) ⊕ (Fin n → Bool)`
+  (defined in **Section 5**). It splits a length-`n+1` Boolean vector into the first bit choosing left (`Sum.inl` for `false`) or right (`Sum.inr` for `true`), with the remaining `n` bits giving the index within that block.
+- The `.symm` uses the inverse direction because `fromBlocks` already lives in the sum-indexed world.
+
+So `reindex` converts the block-indexed matrix into one indexed by Boolean vectors of length `n+1`.
+
+## 4. Why this is a recursive block definition
+
+Putting it all together:
+
+- `H_0` is the zero 1×1 matrix.
+- `H_{n+1}` is built from `H_n` in a 2×2 block pattern:
+  - top-left is `H_n`
+  - bottom-right is `-H_n`
+  - off-diagonals are identity matrices
+- a reindexing step converts block indices into Boolean-vector indices
+
+This is a canonical recursive block matrix definition: you double the dimension by stacking four blocks, two of which are the previous matrix (one with a sign flip), and two of which are identity matrices.
+
+## 5. The accompanying statement
+
+The comment at the end hints at a key property of the Huang matrices:
+
+```lean
+/-
+The square of the Huang matrix A_n is n times the identity matrix.
+-/
+```
+
+So the recursion is set up to make `H_n^2 = n * I` true for all `n`. The block form makes it possible to prove this by induction, since block multiplication decomposes into the same four-block pattern.
+
+---
+
+**Summary:** `huang_matrix` is defined recursively by a 2×2 block construction, with off-diagonal identities, a sign flip on the bottom-right, and a reindexing step to convert the block sum indices into Boolean-vector indices. This is the Lean encoding of a structured matrix recurrence that supports an inductive proof of its algebraic properties.

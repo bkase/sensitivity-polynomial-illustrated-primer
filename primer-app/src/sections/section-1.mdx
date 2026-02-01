@@ -1,107 +1,371 @@
-# Generalizing proofs in Lean: `Harmonic.GeneralizeProofs`
+# Section 1: Core definitions
 
-This section defines a customized version of Mathlib’s `generalize_proofs` tactic. The goal of the tactic is to **remove proof-term dependencies from definitional equality** by turning those proofs into explicit arguments. In large formalizations (like the Sensitivity Conjecture), this prevents Lean from getting stuck on “the same proposition, but different proof objects,” and makes rewriting and definitional reduction far more robust.
 
-Below is a guided tour of what the code does and why it matters.
+---
 
-## Big picture: what `generalize_proofs` does
+This section defines the *sensitivity* of a Boolean function — the central concept in the Sensitivity Conjecture.
 
-Lean’s definitional equality treats proofs as data. When you build terms that depend on a proof (for example, a dependent `Subtype`, `Finset` membership proof, or a lemma packaged into a structure), the *exact proof term* can affect whether two expressions are definitionally equal. Two mathematically identical proofs can still be different terms, and that can block rewriting or `simp` from closing a goal.
+## What sensitivity measures
 
-`generalize_proofs` fixes this by:
+For a Boolean function \(f : \{0,1\}^n \to \{0,1\}\), the **sensitivity** of `f` is the maximum, over all inputs `x`, of how many single-bit flips change the output. Informally:
 
-1. Scanning a term (the goal or selected hypotheses).
-2. Finding proof terms that occur inside it.
-3. Abstracting those proofs into fresh variables.
-4. Replacing the original proof terms with those variables.
+- Fix an input `x`.
+- Flip exactly one coordinate to get a neighbor `y`.
+- Count how many such neighbors change `f`'s value.
+- Sensitivity is the maximum of that count over all `x`.
 
-After the tactic, your goal is definitionally equal to a version that no longer hardcodes those proof objects. This makes subsequent transformations and rewrites *proof-irrelevant in practice*, even when Lean’s kernel still distinguishes proof terms.
+So sensitivity measures how locally "fragile" the function is: if many one-bit changes flip the output, `f` is highly sensitive at that input.
 
-## Walkthrough of the implementation
+## The Lean definition
 
-### 1. `mkLambdaFVarsUsedOnly'`
+The code in this section is:
+
 ```lean
--- Like Mathlib’s helper, but keeps all fvars (usedOnly := false).
-def mkLambdaFVarsUsedOnly' (fvars : Array Expr) (e : Expr) : MetaM (Array Expr × Expr)
+def sensitivity {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
+  Finset.sup Finset.univ (fun x =>
+    Finset.card
+      (Finset.filter
+        (fun y =>
+          (Finset.card (Finset.filter (fun i => x i ≠ y i) Finset.univ) = 1)
+          ∧ f x ≠ f y)
+        Finset.univ))
 ```
-This function wraps an expression in lambdas over a list of free variables, but **does not drop “unused” binders** (`usedOnly := false`). This is crucial when abstracting proofs: a proof might be needed for type-checking even if it is not syntactically referenced after reduction. Keeping all binders avoids accidentally losing dependencies.
 
-### 2. `abstractProofs'`
+Let's unpack this in pieces.
+
+### Term-level definition (no tactics)
+
+This snippet is written entirely in **term mode** (a direct expression), not in tactic mode. There are **no tactics** here — no `by`, `simp`, `linarith`, etc. Everything is a nested expression that Lean can typecheck without any proof scripting.
+
+### Types and inputs
+
+- `n : ℕ` is the input size.
+- An input vector `x` is represented as a function `Fin n → Bool`, i.e., a Boolean value for each index `0, 1, ..., n-1`.
+- The Boolean function is `f : (Fin n → Bool) → Bool`.
+
+**Correspondence with standard notation**: In the mathematical literature, inputs are elements of `{0,1}^n`. In Lean, we use `Fin n → Bool` with the convention:
+- `false` corresponds to `0`
+- `true` corresponds to `1`
+
+So a Boolean vector like `(0, 1, 1, 0)` becomes the function `fun i => if i = 1 ∨ i = 2 then true else false`.
+
+### Finsets and `Finset.univ`
+
+Lean uses finite sets (`Finset`) to quantify over all elements of a finite type. Here:
+
+- `Finset.univ` over `Fin n → Bool` is the set of all Boolean vectors of length `n`.
+- `Finset.univ` over `Fin n` is the set of all indices `0..n-1`.
+- `Finset` is a data type for finite sets with decidable equality; it carries a list-like representation plus proofs that duplicates are removed.
+
+**Why this works**: Lean knows that `Fin n → Bool` is a finite type via the `Fintype` instance for function types. Specifically, `Fintype.card (Fin n → Bool) = 2^n` because there are 2 choices (true/false) for each of the `n` positions. This instance allows `Finset.univ` to enumerate all `2^n` Boolean vectors.
+
+### Counting Hamming distance 1
+
+Inside the definition, this fragment:
+
 ```lean
-partial def abstractProofs' (e : Expr) (ty? : Option Expr) : MAbs Expr
+Finset.card (Finset.filter (fun i => x i ≠ y i) Finset.univ)
 ```
-This is the main traversal. It walks the expression tree and, whenever it encounters a proof term, it:
 
-- Beta-reduces and normalizes the proof.
-- Lambda-abstracts over the current local proof variables.
-- Stores the generalized proof term in an internal cache (`MAbs.insertProof`).
-- Replaces the original proof occurrence with an application of the generalized proof to the local proof variables.
+counts the number of indices `i` where `x i` differs from `y i`. This is the Hamming distance between `x` and `y`.
 
-The result is an expression where each proof is “lifted out” and can be introduced as a fresh hypothesis later.
+The condition
 
-Two key details:
-
-- **`config.maxDepth`**: limits recursion for performance; beyond that, it leaves the term as-is.
-- **`config.abstract`**: if false and a proof depends on locals, it won’t be abstracted. This preserves behavior in sensitive contexts.
-
-### 3. `withGeneralizedProofs'`
 ```lean
-partial def withGeneralizedProofs' {α} ... (e : Expr) (ty? : Option Expr)
-    (k : Array Expr → Array Expr → Expr → MGen α) : MGen α
+(... = 1)
 ```
-This wraps `abstractProofs'` and **materializes** the generalizations as new local hypotheses:
 
-- It runs `abstractProofs'` to collect the proof terms that should be abstracted.
-- For each collected proof type, it creates a new local hypothesis.
-- It replaces proof occurrences in the expression with those new fvars.
+forces `y` to differ from `x` in exactly one coordinate.
 
-The callback `k` then receives:
+### Counting sensitive neighbors
 
-- `fvars`: the new proof variables introduced,
-- `pfs`: the generalized proof terms (as lambda-expressions),
-- `e'`: the updated expression with abstracted proofs.
+The inner filter is:
 
-### 4. `generalizeProofsCore'`
 ```lean
-partial def generalizeProofsCore'
-    (g : MVarId) (fvars rfvars : Array FVarId) (target : Bool)
+Finset.filter (fun y => (distance = 1) ∧ f x ≠ f y) Finset.univ
 ```
-This is the core tactic logic. It:
 
-1. Reverts the selected hypotheses (or all hypotheses if `location` is `*`).
-2. Re-introduces them one-by-one.
-3. While re-introducing, it runs `withGeneralizedProofs'` on each type to generalize proofs inside the binder type.
-4. Optionally generalizes proofs in the **target** (if `target = true`).
+So for a fixed `x`, it keeps all `y` with Hamming distance 1 from `x` and where `f` flips value. Then:
 
-There’s also a specialized path for let-bound proofs and proof hypotheses already in the context (`propToFVar`) to reuse existing proof variables rather than introduce duplicates.
-
-### 5. `generalizeProofs'` and the elaborator
 ```lean
-elab (name := generalizeProofsElab'') "generalize_proofs" ...
+Finset.card (...)
 ```
-This installs the tactic so it behaves like Mathlib’s `generalize_proofs`, but uses the modified helpers above. You can call it as:
 
-- `generalize_proofs` — generalize proofs in all hypotheses and the target.
-- `generalize_proofs at h1 h2` — only in specific hypotheses.
-- `generalize_proofs at *` — all hypotheses.
+counts how many such `y` exist. This is the **sensitivity of `f` at `x`**.
 
-The optional binder identifiers let you name the newly introduced proof variables.
+### Taking the maximum
 
-## Why this matters for the Sensitivity Conjecture proof
+Finally,
 
-The Sensitivity Conjecture formalization involves deep chains of dependent definitions—finite sets, subtypes, and structures whose fields contain proof objects (e.g., membership proofs, bound proofs, and proof-carrying indices). In such environments:
+```lean
+Finset.sup Finset.univ (fun x => ...)
+```
 
-- Many expressions are **definitionally equal only if their internal proof terms match exactly**.
-- Rewriting and simplification can get stuck because proof terms differ even though the propositions are equivalent.
-- Tactics that rely on definitional equality (like `simp`, `cases`, `rfl`, or automation) can fail unexpectedly or create fragile proof scripts.
+computes the supremum of that count across all inputs `x`. This yields the overall sensitivity of `f`.
 
-`Harmonic.GeneralizeProofs.generalize_proofs` eliminates these issues by **making those proof terms explicit parameters**. Once a proof is an argument rather than hidden inside a definition, Lean stops requiring exact proof-term equality to reduce or rewrite. In practice, this makes the large, compositional steps in the Sensitivity Conjecture proof *stable and predictable*.
+**Technical note on `Finset.sup`**: This is the lattice supremum operation. For natural numbers (`ℕ`), the lattice supremum is simply the maximum. The function `Finset.sup` requires a `SemilatticeSup` instance with a bottom element `⊥`; for `ℕ`, this bottom is `0`. If the set is empty, `Finset.sup` returns `⊥ = 0`. For nonempty sets, you could equivalently use `Finset.sup'` which doesn't need the bottom element but requires a nonemptiness proof.
 
-### Intuition in one sentence
-You can think of `generalize_proofs` as “proof-irrelevance on demand”: it rewrites a goal so that the proof objects stop mattering for definitional equality, which is exactly what you want in a long, dependent proof like the Sensitivity Conjecture.
+## Worked example: the OR function
 
-## Minimal example (conceptual)
+Let `n = 3` and define `f` to be the OR function:
 
-Suppose you have a term that depends on two different proofs of the same fact. Those proofs are not definitionally equal, so rewriting fails. After `generalize_proofs`, both are replaced by a fresh variable, and definitional equality no longer cares which proof was used.
+```lean
+def or3 : (Fin 3 → Bool) → Bool := fun x => x 0 || x 1 || x 2
+```
 
-This is precisely the kind of technical friction the Sensitivity Conjecture proof would otherwise face repeatedly.
+In standard notation, `or3(x₀, x₁, x₂) = x₀ ∨ x₁ ∨ x₂`, which is `true` if any bit is `true`.
+
+**Analyzing sensitivity at each input:**
+
+- `x = (false, false, false)` (the all-zeros input):
+  - Neighbors are `(true, false, false)`, `(false, true, false)`, `(false, false, true)`
+  - All three neighbors have `or3 = true`, while `or3 x = false`
+  - So sensitivity at this input is **3**
+
+- `x = (true, true, true)` (the all-ones input):
+  - Neighbors are `(false, true, true)`, `(true, false, true)`, `(true, true, false)`
+  - All three neighbors still have `or3 = true`, same as `or3 x = true`
+  - So sensitivity at this input is **0**
+
+- `x = (true, false, false)`:
+  - Neighbors: `(false, false, false)` has `or3 = false` ≠ `or3 x = true` ✓
+  - Neighbors: `(true, true, false)` and `(true, false, true)` have `or3 = true` = `or3 x`
+  - So sensitivity at this input is **1**
+
+The maximum over all 8 inputs is **3**, achieved at the all-zeros input. Thus `sensitivity or3 = 3`.
+
+In Lean, the definition enumerates all `x : Fin 3 → Bool` (8 inputs), counts sensitive neighbors for each, and takes the maximum via `Finset.sup`.
+
+## Formal mathematical definition
+
+For completeness, here is the standard mathematical definition that the Lean code encodes:
+
+**Definition**: The **sensitivity at input \(x\)** is:
+\[
+s(f, x) = |\{i \in [n] : f(x) \neq f(x^{\oplus i})\}|
+\]
+where \(x^{\oplus i}\) denotes \(x\) with the \(i\)-th bit flipped.
+
+**Definition**: The **sensitivity of \(f\)** is:
+\[
+s(f) = \max_{x \in \{0,1\}^n} s(f, x)
+\]
+
+The Lean definition directly implements this: `Finset.filter` computes the set \(\{i : f(x) \neq f(x^{\oplus i})\}\), `Finset.card` computes its cardinality, and `Finset.sup` computes the maximum.
+
+## Summary
+
+- The definition computes the maximum number of one-bit flips that change \(f\).
+- It uses `Finset.univ` to enumerate all inputs and all indices.
+- The Hamming distance test `= 1` enforces single-bit flips.
+- The final `Finset.sup` takes the maximum over all inputs.
+
+This is a direct, faithful Lean translation of the standard mathematical definition of sensitivity.
+
+---
+
+This section defines the Boolean character \(\chi_S(x)\), a basic building block of Fourier analysis on the Boolean cube \(\{0,1\}^n\).
+
+## Definition in math form
+
+The Lean code defines:
+
+```lean
+def chi {n : ℕ} (S : Finset (Fin n)) (x : Fin n → Bool) : ℝ :=
+  if (Finset.filter (fun i => x i) S).card % 2 = 0 then 1 else -1
+```
+
+Translated to math, if we view a Boolean input \(x : \{0,1\}^n\) and a subset \(S \subseteq [n]\), then
+
+\[
+\chi_S(x) = (-1)^{|\{ i \in S : x_i = 1 \}|}.
+\]
+
+In words: count how many indices in \(S\) have value 1 under \(x\). If that count is even, \(\chi_S(x) = 1\); if it is odd, \(\chi_S(x) = -1\).
+
+The code expresses exactly this parity test:
+- `Finset.filter (fun i => x i) S` is the subset of \(S\) where \(x_i\) is true.
+- `.card % 2` takes the parity of that count.
+- Even parity gives `1`, odd parity gives `-1`.
+
+## Why it always returns ±1
+
+Because \(\chi_S(x)\) is defined as a parity test, it has only two possible outcomes:
+- If the count of ones in \(S\) is even, then \(\chi_S(x)=1\).
+- If the count is odd, then \(\chi_S(x)=-1\).
+
+There is no other possibility. Parity only distinguishes even vs. odd, so the output is always \(+1\) or \(-1\).
+
+Another way to see this is through the exponent form:
+\[
+\chi_S(x) = (-1)^{k}, \quad k = |\{ i \in S : x_i = 1 \}|.
+\]
+When \(k\) is even, \((-1)^k=1\); when \(k\) is odd, \((-1)^k=-1\).
+
+## Role in Fourier analysis on the Boolean cube
+
+The characters \(\chi_S\) form the Fourier basis for functions \(f : \{0,1\}^n \to \mathbb{R}\). Concretely:
+
+- The collection \(\{\chi_S : S \subseteq [n]\}\) is an orthonormal basis under the inner product
+  \[
+  \langle f, g \rangle = \mathbb{E}_x[f(x)g(x)] = \frac{1}{2^n} \sum_{x \in \{0,1\}^n} f(x)g(x),
+  \]
+  where \(x\) is uniformly random in \(\{0,1\}^n\).
+
+**Orthonormality proof sketch**: To show \(\langle \chi_S, \chi_T \rangle = \delta_{S,T}\):
+- When \(S = T\): \(\chi_S(x)^2 = 1\) for all \(x\), so \(\mathbb{E}[\chi_S^2] = 1\).
+- When \(S \neq T\): Let \(i \in S \triangle T\) (the symmetric difference). For each assignment to coordinates outside \(\{i\}\), flipping \(x_i\) flips the sign of \(\chi_S(x)\chi_T(x)\). Since exactly half the inputs have \(x_i = 0\) and half have \(x_i = 1\), the contributions cancel, giving \(\mathbb{E}[\chi_S \chi_T] = 0\).
+
+- Every function can be expanded as
+  \[
+  f(x) = \sum_{S \subseteq [n]} \hat f(S) \chi_S(x).
+  \]
+
+- The Fourier coefficient for subset \(S\) is exactly the expectation noted in the Lean comment:
+  \[
+  \hat f(S) = \mathbb{E}_x\big[f(x)\,\chi_S(x)\big].
+  \]
+
+Intuitively, \(\chi_S\) measures the parity of \(x\) on the coordinates in \(S\). Multiplying by \(\chi_S(x)\) and averaging over all \(x\) tells us how much of that parity pattern is present in \(f\). Large coefficients indicate that \(f\) correlates with the parity on \(S\).
+
+Finally, the **Fourier degree** (or simply **degree**) of a function \(f : \{0,1\}^n \to \mathbb{R}\) is the largest size \(|S|\) for which \(\hat f(S)\neq 0\). This is the maximum order of parity interaction appearing in the Fourier expansion. For a Boolean function \(f : \{0,1\}^n \to \{0,1\}\), we treat the output as real-valued (0 or 1) and apply the same definition. By convention, the constant zero function has degree 0 (or sometimes −∞).
+
+## Summary
+
+- \(\chi_S(x)\) is defined as \((-1)^{|\{i \in S : x_i = 1\}|}\), computed via a parity test.
+- It always returns \(+1\) or \(-1\).
+- The characters \(\chi_S\) form an orthonormal Fourier basis on the Boolean cube.
+- Fourier coefficients measure correlation with parity patterns.
+- The degree of a Boolean function is the largest set size with a nonzero Fourier coefficient.
+
+---
+
+This section introduces two definitions in Lean:
+
+```lean
+noncomputable def fourier_coeff {n : ℕ} (f : (Fin n → Bool) → Bool) (S : Finset (Fin n)) : ℝ :=
+  (Finset.sum Finset.univ (fun x => (if f x then 1 else 0) * chi S x)) / 2^n
+
+noncomputable def degree {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
+  Finset.sup (Finset.filter (fun S => fourier_coeff f S ≠ 0) Finset.univ) Finset.card
+```
+
+The `noncomputable` keyword tells Lean this definition relies on classical choice or real-number operations that are not algorithmically computable.
+
+---
+
+## 1. Boolean functions as real‑valued functions
+
+A Boolean function `f : (Fin n → Bool) → Bool` takes an `n`‑bit input and returns a Boolean output. The Fourier analysis of Boolean functions usually works with real‑valued functions, so the code converts the output to a real number using:
+
+```lean
+(if f x then 1 else 0)
+```
+
+This maps `false ↦ 0` and `true ↦ 1`. (Sometimes the literature uses `{-1, +1}` instead; here we stick to `{0,1}` because that's exactly what the code does.)
+
+---
+
+## 2. Fourier coefficients in the code
+
+### The definition
+
+```lean
+fourier_coeff f S =
+  (sum over all x) ((if f x then 1 else 0) * chi S x) / 2^n
+```
+
+This is the average value of `f(x) * chi_S(x)` over all inputs `x`.
+
+### What is `chi S x`?
+
+`chi S x` is the parity character defined in **Section 3**:
+
+```lean
+chi S x = (-1)^{|{i ∈ S : x i = true}|}
+```
+
+It returns `+1` if an even number of coordinates in `S` are true, and `-1` if odd. This is the standard Fourier basis function for Boolean analysis.
+
+### Expectation interpretation
+
+The Fourier coefficient is the expectation of `f(x) · χ_S(x)` under the uniform distribution:
+
+```
+fourier_coeff f S = 𝔼_x[f(x) · χ_S(x)] = (1/2^n) · Σ_{x ∈ {0,1}^n} f(x) · χ_S(x)
+```
+
+where `f(x)` is treated as 0 or 1 (the `{0,1}` encoding). This measures how much `f` "aligns" with the parity pattern on `S`.
+
+---
+
+## 3. Degree from Fourier support
+
+The second definition uses the Fourier coefficients to define the **degree**:
+
+```lean
+degree f =
+  sup (card S) over all S with fourier_coeff f S ≠ 0
+```
+
+In words:
+
+- Look at every subset `S` of variables.
+- Keep only those where the Fourier coefficient is nonzero.
+- Take the maximum size of such a set.
+
+This is exactly the **Fourier degree**: the largest subset size for which the Fourier expansion has a non‑zero coefficient.
+
+**Convention for edge cases**: If `f` is the constant zero function, then all Fourier coefficients are zero, and `Finset.sup` over an empty set returns `0` (the lattice bottom for `ℕ`). So the constant zero function has degree 0. The constant one function has `fourier_coeff f ∅ = 1 ≠ 0` and all other coefficients zero, so it also has degree 0.
+
+### Intuition
+
+- Low degree means the function is well‑approximated by small‑interaction terms (few variables at a time).
+- High degree means the function needs large, global parity patterns to describe it.
+
+---
+
+## 4. Connection to sensitivity
+
+**Sensitivity** measures how many single‑bit flips can change the function's value at a given input. For a Boolean function `f`, the sensitivity at input `x` counts how many coordinates `i` satisfy:
+
+```
+  f(x) ≠ f(x with bit i flipped)
+```
+
+The maximum of that count over all `x` is the sensitivity of `f`.
+
+### Why Fourier degree matters
+
+Fourier analysis provides a powerful bridge between algebraic structure and combinatorial measures like sensitivity:
+
+- A nonzero Fourier coefficient on a large set `S` means the function depends (in a parity sense) on many variables at once.
+- That kind of global dependence tends to force the function to be sensitive to bit flips.
+
+More concretely:
+
+- If a function has **high Fourier degree**, then there must be some input where many variables matter. That often implies higher sensitivity.
+- Conversely, if the function has very low sensitivity everywhere, the Fourier expansion tends to concentrate on small sets, leading to low degree.
+
+This is the basic intuition behind the **Sensitivity Conjecture** (now a theorem, proved by Huang 2019):
+
+**Theorem (Sensitivity Conjecture)**: For any Boolean function `f : {0,1}^n → {0,1}`,
+```
+sensitivity(f) ≥ √(degree(f))
+```
+
+This says that high Fourier degree implies high sensitivity. The Lean formalization in this project proves exactly this inequality. The converse direction (`degree(f) ≤ sensitivity(f)^2`) is easier and was known earlier; together they show that sensitivity and degree are polynomially related.
+
+---
+
+## 5. Takeaway
+
+- `fourier_coeff f S` is the normalized correlation of `f` with the parity character on `S`.
+- `degree f` is the maximum size of a subset with a nonzero Fourier coefficient.
+- High degree captures global interactions among many variables.
+- Sensitivity captures how fragile `f` is to individual bit flips.
+- Fourier degree and sensitivity are tightly linked, making Fourier analysis a natural tool for studying sensitivity.
+
+---
+
+If you want, the next step is to look at how `chi S x` is defined in the Lean code and how the `{0,1}` output encoding compares to the more common `{−1,+1}` normalization—this will clarify constants and sign conventions in later lemmas.

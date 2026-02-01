@@ -1,111 +1,351 @@
-# Section 8: Eigenvalues of the Huang Matrix
+# Section 8: Full-degree case (core bound)
 
-This section proves a clean characterization of the eigenvalues of the Huang matrix. The key idea is that the matrix squares to a scalar multiple of the identity. From that, any eigenvalue must satisfy a simple quadratic equation.
-
-## The Lean statement
-
-```lean
-theorem huang_matrix_eigenvalues {n : ℕ} {μ : ℝ}
-  (h : Module.End.HasEigenvalue (Matrix.toLin' (huang_matrix n)) μ) :
-  μ ^ 2 = n := by
-  ...
-```
-
-Read this as: for any natural number `n` and real number `μ`, if `μ` is an eigenvalue of the linear map corresponding to `huang_matrix n`, then `μ^2 = n`.
-
-`Matrix.toLin'` coerces a matrix into a linear map.
-
-## Mathematical idea
-
-Let `A` be the Huang matrix. The earlier lemma `huang_matrix_sq n` says
-
-```
-A^2 = n I.
-```
-
-If `v` is an eigenvector for eigenvalue `μ`, then
-
-```
-A v = μ v.
-```
-
-Apply `A` again:
-
-```
-A^2 v = A (A v) = A (μ v) = μ (A v) = μ (μ v) = μ^2 v.
-```
-
-But `A^2 = n I`, so
-
-```
-A^2 v = n v.
-```
-
-Therefore
-
-```
-μ^2 v = n v.
-```
-
-Since `v` is a nonzero eigenvector, we can cancel `v` and conclude
-
-```
-μ^2 = n.
-```
-
-This is exactly what the theorem states: every eigenvalue must be a square root of `n` (over the reals, this means `μ = ±√n`).
-
-## How the Lean proof mirrors the math
-
-### 1) Extract an eigenvector
-
-```lean
-obtain ⟨ v, hv ⟩ := h.exists_hasEigenvector;
-```
-
-From `HasEigenvalue`, we get an eigenvector `v` with proof `hv` that it is nonzero and satisfies the eigenvector equation.
-
-### 2) Apply the squared matrix identity
-
-```lean
-have h_sq : (Matrix.toLin' (huang_matrix n)) (Matrix.toLin' (huang_matrix n) v)
-  = (n : ℝ) • v := by
-  convert congr_arg (fun x => x.mulVec v) <| huang_matrix_sq n using 1;
-  · simp +decide [sq];
-  · simp +decide [Matrix.smul_eq_diagonal_mul];
-```
-
-Here the proof applies the matrix identity `A^2 = n I` to the vector `v`. The `convert` step rewrites the identity in the form needed for `mulVec`, and `simp` handles the algebraic reshaping.
-
-### 3) Use the eigenvector equation
-
-```lean
-have h_eigen : (Matrix.toLin' (huang_matrix n)) v = μ • v := by
-  cases hv; aesop;
-```
-
-This is the direct eigenvector equation `A v = μ v`.
-
-### 4) Combine both and cancel the vector
-
-```lean
-simp_all +decide [sq];
-exact smul_left_injective _ hv.2 <| by
-  simpa [mul_assoc, smul_smul] using h_sq;
-```
-
-After rewriting, Lean shows `μ^2 • v = n • v`. The lemma `smul_left_injective` lets us cancel the nonzero vector `v` (the nonzero proof is `hv.2`), leaving `μ^2 = n`.
-
-## Takeaway
-
-The eigenvalues of the Huang matrix are completely determined by its squaring relation:
-
-```
-A^2 = n I  =>  μ^2 = n.
-```
-
-So eigenvalues are characterized by the equation `μ^2 = n`. This is the standard algebraic pattern: if a matrix squares to a scalar multiple of the identity, every eigenvalue squares to that scalar.
 
 ---
 
-*(The comment at the end hints at defining the sorted list of eigenvalues as the sorted roots of the characteristic polynomial, but the proof here focuses only on the equation `μ^2 = n`.)*
+This section defines **restriction** of a Boolean function to a subset of coordinates. This is a fundamental operation that allows us to focus on a "subcube" by fixing some variables to constant values.
+
+## What is restriction?
+
+Given a Boolean function
+
+```
+f : (Fin n → Bool) → Bool
+```
+
+and a subset of coordinates `S : Finset (Fin n)`, we can **restrict** `f` by:
+
+- allowing the coordinates in `S` to vary freely, and
+- fixing all coordinates outside `S` to some assignment `z : Fin n → Bool`.
+
+In Lean, the restriction is:
+
+```lean
+def restriction {n : ℕ} (f : (Fin n → Bool) → Bool) (S : Finset (Fin n)) (z : Fin n → Bool) :
+  (Fin (Fintype.card {x // x ∈ S}) → Bool) → Bool :=
+  fun y => f (fun i =>
+    if h : i ∈ S
+    then y ((Fintype.equivFin {x // x ∈ S}).symm ⟨i, h⟩)
+    else z i)
+```
+
+The input to the restricted function is a Boolean assignment only on the coordinates in `S`. The code constructs a full assignment `x : Fin n → Bool` by:
+
+- using the input `y` on indices in `S` (via an equivalence between `S` and `Fin |S|`),
+- using `z` on indices outside `S`.
+
+Then it evaluates `f x`.
+
+## Intuition: plugging in constants
+
+Intuitively, a restriction is the usual "plug in constants outside S" operation. If you have a Boolean function on 5 variables and you fix variables 2 and 4 to specific values, you get a new function on the remaining 3 variables.
+
+Example: Suppose `f(x₀, x₁, x₂) = x₀ XOR x₁ XOR x₂` and we restrict to `S = {0, 2}` with `z₁ = true`. Then:
+
+```
+restriction f S z (y₀, y₁) = y₀ XOR true XOR y₁ = NOT(y₀ XOR y₁)
+```
+
+The restricted function depends only on the free variables in `S`.
+
+## Why restriction matters
+
+Restriction is a key tool for several reasons:
+
+1. **Fourier analysis**: Restricting to a subset `S` that supports a top-degree Fourier coefficient turns that coefficient into the "full set" coefficient of the restricted function.
+
+2. **Induction**: Many proofs about Boolean functions proceed by restricting to smaller subcubes.
+
+3. **Sensitivity bounds**: As we'll see in the next section, sensitivity cannot increase under restriction, which allows us to transfer bounds.
+
+## Connection to Fourier coefficients
+
+A crucial lemma (proved elsewhere) states:
+
+```lean
+lemma exists_restriction_fourier_coeff_univ_ne_zero (f : (Fin n → Bool) → Bool) (S : Finset (Fin n))
+  (hS : fourier_coeff f S ≠ 0) :
+  ∃ z, fourier_coeff (restriction f S z) Finset.univ ≠ 0
+```
+
+This says: if `f` has a nonzero Fourier coefficient at `S`, then there exists a restriction `z` such that the restricted function has a nonzero coefficient at the full set (i.e., `Finset.univ` for the smaller domain).
+
+This is exactly what we need to connect the degree of `f` to the degree of its restrictions.
+
+## Takeaways
+
+- Restriction fixes variables outside a set `S` and keeps only the `S`-coordinates free.
+- The Lean definition uses an explicit equivalence to map between the restricted and full coordinate spaces.
+- Restriction is essential for transferring Fourier-analytic information between functions of different dimensions.
+
+---
+
+This section proves the key monotonicity fact: **restricting a function cannot increase its sensitivity**. This lemma is the bridge that lets us transfer sensitivity bounds from restricted functions back to the original.
+
+## The Lemma
+
+```lean
+lemma sensitivity_restriction_le {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (S : Finset (Fin n)) (z : Fin n → Bool) :
+  sensitivity (restriction f S z) ≤ sensitivity f
+```
+
+In plain language: the sensitivity of the restricted function is at most the sensitivity of the original function.
+
+## Why it's true: intuition
+
+Recall from **Section 22** that `restriction f S z` is a function on \(\{0,1\}^{|S|}\), where we fix coordinates outside \(S\) to the values in \(z\).
+
+**Key observation about Hamming distance**: In the restricted space \(\{0,1\}^{|S|}\), two inputs \(y, y'\) are neighbors (Hamming distance 1) if they differ in exactly one coordinate of \(S\). This corresponds exactly to neighbors in the full space \(\{0,1\}^n\) that:
+- Differ in exactly one coordinate
+- That coordinate is in \(S\)
+- Both inputs agree with \(z\) outside \(S\)
+
+So the restricted space has **fewer** neighbors to consider (only flips within \(S\)), not more.
+
+Every input \(y \in \{0,1\}^{|S|}\) to the restricted function corresponds to a full input \(x \in \{0,1\}^n\), obtained by:
+\[
+x_i = \begin{cases} y_j & \text{if } i \text{ is the } j\text{-th element of } S \\ z_i & \text{if } i \notin S \end{cases}
+\]
+
+Since the restriction only explores a subset of inputs and a subset of bit flips, it cannot create more sensitive directions than the original function already had.
+
+## Proof structure in Lean
+
+The Lean proof formalizes this intuition by:
+
+### 1. Unfold sensitivity as a supremum
+
+Recall that sensitivity is defined as:
+
+```lean
+def sensitivity (f : (Fin n → Bool) → Bool) : ℕ :=
+  Finset.sup Finset.univ (fun x =>
+    (Finset.filter (fun y => hammingDist x y = 1 ∧ f x ≠ f y) Finset.univ).card)
+```
+
+So we need to show that the supremum over the restricted domain is at most the supremum over the full domain.
+
+### 2. Map restricted inputs to full inputs
+
+For each restricted input `y`, construct the corresponding full input `x` by combining `y` on `S` with `z` outside `S`. This is the inverse of the restriction operation.
+
+### 3. Show sensitive neighbors inject
+
+The key step is constructing an **injection** from sensitive neighbors of \(y\) in the restricted domain to sensitive neighbors of \(x\) in the full domain.
+
+Let \(y' \in \{0,1\}^{|S|}\) be a sensitive neighbor of \(y\) for the restricted function, meaning:
+- \(y'\) differs from \(y\) in exactly one coordinate \(j \in S\)
+- \((\text{restriction } f\, S\, z)(y) \neq (\text{restriction } f\, S\, z)(y')\)
+
+Construct \(x' \in \{0,1\}^n\) by: keeping \(z\) outside \(S\), and using \(y'\) on \(S\).
+
+Then \(x'\) differs from \(x\) in exactly one coordinate (the same \(j\)), and by definition of restriction:
+\[
+f(x) = (\text{restriction } f\, S\, z)(y) \neq (\text{restriction } f\, S\, z)(y') = f(x')
+\]
+
+So \(x'\) is a sensitive neighbor of \(x\) for \(f\). This map \(y' \mapsto x'\) is injective because distinct \(y'\) give distinct \(x'\).
+
+### 4. Apply cardinality comparison
+
+Since there's an injection from sensitive neighbors in the restricted domain to sensitive neighbors in the full domain:
+
+```lean
+(restricted sensitive neighbors at y).card ≤ (sensitive neighbors at x).card
+```
+
+Taking the supremum over all `y` and noting that each maps to some `x`:
+
+```lean
+sup_y (restricted sensitivity at y) ≤ sup_x (sensitivity at x)
+```
+
+This gives the desired inequality.
+
+## Why this matters for the main proof
+
+This monotonicity lemma is crucial in the final argument:
+
+1. We find a top-degree Fourier coefficient at some set `S`.
+2. We restrict to `S` so that the restricted function has full degree equal to `|S|`.
+3. We apply the "full-degree implies large sensitivity" bound to the restricted function.
+4. We use `sensitivity_restriction_le` to lift this bound back to the original function:
+
+```
+sensitivity f ≥ sensitivity (restriction f S z) ≥ √(degree (restriction f S z)) = √(degree f)
+```
+
+Without monotonicity, we couldn't transfer the bound from the restriction to the original function.
+
+## Takeaways
+
+- Sensitivity is monotone under restriction: it can only stay the same or decrease.
+- The Lean proof mirrors the combinatorial argument by building an explicit injection from restricted sensitive neighbors to original sensitive neighbors.
+- This lemma is the key bridge between the full-degree case (where spectral methods give bounds) and the general case (arbitrary Boolean functions).
+
+---
+
+This section proves the final statement of the sensitivity conjecture in the Boolean setting:
+
+```lean
+theorem sensitivity_conjecture {n : ℕ} (f : (Fin n → Bool) → Bool) :
+  (sensitivity f : ℝ) ≥ Real.sqrt (degree f)
+```
+
+In mathematical notation:
+\[
+s(f) \geq \sqrt{\deg(f)}
+\]
+
+**Fourier basis convention**: Throughout this project, we use the \(\{0,1\}\)-valued encoding for Boolean functions (see **Section 4**). The Fourier degree is defined using the parity characters \(\chi_S\) (see **Section 3**).
+
+The proof is a clean chain of earlier lemmas. Below is a walkthrough of the ideas and how the Lean proof stitches them together.
+
+---
+
+## Goal and strategy
+
+We want to show the sensitivity of any Boolean function is at least the square root of its Fourier degree. The proof splits into two cases:
+
+1. `degree f = 0` (constant function): then the inequality is trivial.
+2. `degree f ≠ 0`: find a top-degree Fourier coefficient, restrict to that support so the full coefficient is nonzero, deduce the restricted function has degree equal to the number of variables, apply a degree-to-sensitivity lower bound, then lift back to the original function using monotonicity under restriction.
+
+The proof is essentially:
+
+```
+sensitivity f
+  >= sensitivity (restriction f S z)
+  >= sqrt (degree (restriction f S z))
+  =  sqrt (degree f)
+```
+
+---
+
+## Step-by-step explanation
+
+### 1) Case split on \(\deg(f) = 0\)
+
+Lean starts with:
+
+```lean
+cases eq_or_ne (degree f) 0 <;> simp_all +decide
+```
+
+**Why the degree-0 case is trivial**: If \(\deg(f) = 0\), then \(\sqrt{\deg(f)} = 0\). Since sensitivity is always \(\geq 0\) (it's a natural number), the inequality \(s(f) \geq 0\) holds trivially.
+
+**What degree 0 means**: A function has \(\deg(f) = 0\) if and only if all Fourier coefficients \(\hat{f}(S)\) with \(|S| \geq 1\) are zero. This means \(f\) depends only on the empty set of variables, i.e., \(f\) is a **constant function**. Constant functions have sensitivity 0.
+
+The rest of the proof assumes \(\deg(f) \neq 0\), i.e., \(f\) is non-constant.
+
+### 2) Choose a maximal-support nonzero Fourier coefficient
+
+The degree is defined as the maximum cardinality of a subset `S` with nonzero Fourier coefficient `fourier_coeff f S`.
+
+The proof unfolds the definition and uses finite set arguments to pick an `S` with:
+
+- `fourier_coeff f S ≠ 0`
+- `S.card` is maximal among those with nonzero coefficient
+
+Lean uses `Set.exists_max_image` after establishing finiteness of the set of such `S`. This yields:
+
+```
+∃ k, k = degree f ∧ ∃ S, S.card = k ∧ fourier_coeff f S ≠ 0
+```
+
+This is the "there is a top-degree coefficient" step.
+
+### 3) Restrict to the top-degree support
+
+Using the lemma `exists_restriction_fourier_coeff_univ_ne_zero`, we select a restriction `z` such that for the restricted function
+
+```
+ g = restriction f S z
+```
+
+the Fourier coefficient at the full set is nonzero:
+
+```
+fourier_coeff g Finset.univ ≠ 0
+```
+
+Intuitively: after fixing all variables outside `S`, the coefficient on the remaining variables becomes the top coefficient of the restricted function.
+
+### 4) Degree of the restricted function is exactly `|S|`
+
+Now the lemma `degree_eq_n_of_fourier_coeff_univ_ne_zero` applies:
+
+```
+ degree (restriction f S z) = S.card
+```
+
+Because the "full set" coefficient is nonzero, the restricted function has full degree on its remaining variables.
+
+### 5) Sensitivity lower bound in the full-degree case
+
+Earlier we proved:
+
+```
+sensitivity_ge_sqrt_degree_of_degree_eq_n
+```
+
+This gives:
+
+```
+sensitivity (restriction f S z) ≥ sqrt (degree (restriction f S z))
+```
+
+Combine with the degree equality from Step 4 to get a lower bound in terms of `S.card`.
+
+### 6) Lift the bound back to the original function
+
+Restrictions cannot increase sensitivity, so:
+
+```
+sensitivity f ≥ sensitivity (restriction f S z)
+```
+
+This is exactly `sensitivity_restriction_le` (casted to `ℝ` in the proof).
+
+### 7) Finish with arithmetic and rewriting
+
+The final line `grind` closes the goal by chaining the inequalities and rewriting `S.card = degree f`.
+
+---
+
+## How the pieces fit together
+
+- **Fourier degree** is characterized by the largest subset `S` with a nonzero Fourier coefficient.
+- **Restriction** focuses on that subset and turns its coefficient into the `univ` coefficient of the restricted function.
+- **Full-degree sensitivity bound** shows that for any function whose top coefficient is at `univ`, sensitivity is at least `sqrt degree`.
+- **Monotonicity of sensitivity under restriction** lets us transfer the bound back to the original function.
+
+That chain is exactly the proof structure in Lean.
+
+---
+
+## Lean proof outline (annotated)
+
+```
+cases eq_or_ne (degree f) 0 <;> simp_all +decide
+-- pick top-degree Fourier coefficient
+obtain ⟨k, hk⟩ : ∃ k, k = degree f ∧ ∃ S, S.card = k ∧ fourier_coeff f S ≠ 0 := by
+  unfold degree; ...
+-- restrict so univ coefficient is nonzero
+obtain ⟨S, hS_card, hS_fourier⟩ := hk.2
+obtain ⟨z, hz⟩ : ∃ z, fourier_coeff (restriction f S z) Finset.univ ≠ 0 := by
+  exact exists_restriction_fourier_coeff_univ_ne_zero f S hS_fourier
+-- degree of restriction is full
+have h_deg_g : degree (restriction f S z) = S.card := by
+  have := degree_eq_n_of_fourier_coeff_univ_ne_zero _ hz; aesop
+-- sensitivity bound on restricted function
+have h_sens_g : (sensitivity (restriction f S z) : ℝ) ≥ Real.sqrt (degree (restriction f S z)) := by
+  have := sensitivity_ge_sqrt_degree_of_degree_eq_n (restriction f S z); aesop
+-- sensitivity monotonicity under restriction
+have h_sens_f : (sensitivity f : ℝ) ≥ (sensitivity (restriction f S z) : ℝ) := by
+  exact_mod_cast sensitivity_restriction_le f S z
+-- finish
+ grind
+```
+
+This completes the formal proof of the sensitivity conjecture in the project.

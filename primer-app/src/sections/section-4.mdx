@@ -1,131 +1,297 @@
-# Section 4: Fourier Coefficients, Degree, and Sensitivity
+# Section 4: Huang matrix reindexing and eigen-structure
 
-This section introduces two definitions in Lean:
-
-```lean
-noncomputable def fourier_coeff {n : ℕ} (f : (Fin n → Bool) → Bool) (S : Finset (Fin n)) : ℝ :=
-  (Finset.sum Finset.univ (fun x => (if f x then 1 else 0) * chi S x)) / 2^n
-
-noncomputable def degree {n : ℕ} (f : (Fin n → Bool) → Bool) : ℕ :=
-  Finset.sup (Finset.filter (fun S => fourier_coeff f S ≠ 0) Finset.univ) Finset.card
-```
-
-The `noncomputable` keyword tells Lean this definition relies on classical choice or real-number operations that are not algorithmically computable.
 
 ---
 
-## 1. Boolean functions as real‑valued functions
+This section explains the Lean theorem `g_expectation_nonzero`, which shows that a specific sum (an expectation-like quantity) is nonzero when a Boolean function has full degree. The statement connects the top Fourier coefficient of a Boolean function to the nonvanishing of a signed sum involving the parity character.
 
-A Boolean function `f : (Fin n → Bool) → Bool` takes an `n`‑bit input and returns a Boolean output. The Fourier analysis of Boolean functions usually works with real‑valued functions, so the code converts the output to a real number using:
+## The Lean statement
 
 ```lean
-(if f x then 1 else 0)
+theorem g_expectation_nonzero {n : ℕ} (f : (Fin n → Bool) → Bool)
+  (h_deg : degree f = n) (hn : n ≠ 0) :
+  let g := fun x => (if f x then 1 else 0) * chi Finset.univ x
+  (Finset.sum Finset.univ g) ≠ 0 := by
+  ...
 ```
 
-This maps `false ↦ 0` and `true ↦ 1`. (Sometimes the literature uses `{-1, +1}` instead; here we stick to `{0,1}` because that's exactly what the code does.)
+### What it means in plain language
+
+- We have a Boolean function \(f : \{0,1\}^n \to \{0,1\}\).
+- The **Fourier degree** of \(f\) is \(n\), i.e., the largest \(|S|\) with \(\hat{f}(S) \neq 0\) equals \(n\).
+- We define a transform \(g : \{0,1\}^n \to \mathbb{R}\) by:
+\[
+g(x) = \mathbf{1}_{f(x)=\text{true}} \cdot \chi_{[n]}(x)
+\]
+where \(\mathbf{1}_{f(x)=\text{true}}\) is 1 if \(f(x)\) is true, 0 otherwise, and \(\chi_{[n]}(x)\) is the full parity character (defined in **Section 3**).
+- The theorem says \(\sum_{x \in \{0,1\}^n} g(x) \neq 0\).
+
+**Codomain note**: The expression `(if f x then 1 else 0) * chi Finset.univ x` has type `ℝ` in Lean, since `chi` returns a real number (\(\pm 1\)) and the multiplication is in \(\mathbb{R}\).
+
+This sum is (up to normalization) the Fourier coefficient at the full set \(S = [n]\). If the degree is \(n\), then this top coefficient is nonzero, so the sum cannot vanish.
+
+## Intuition: why the sum is the Fourier coefficient
+
+For a Boolean function, the Fourier coefficient at a set \(S\) is:
+\[
+\hat{f}(S) = \frac{1}{2^n} \sum_{x \in \{0,1\}^n} f(x) \cdot \chi_S(x)
+\]
+
+The Lean definition uses this same formula (see **Section 4**). The key observation is:
+\[
+\sum_x g(x) = \sum_x f(x) \cdot \chi_{[n]}(x) = 2^n \cdot \hat{f}([n])
+\]
+
+So the sum equals \(2^n\) times the Fourier coefficient at the full set. Since \(2^n \neq 0\), the sum is nonzero if and only if \(\hat{f}([n]) \neq 0\).
+
+In the theorem:
+
+- `S` is the full set `Finset.univ`.
+- `f(x)` is represented as `(if f x then 1 else 0)` to move from `Bool` to `Nat` (or `Int`).
+- `chi Finset.univ x` is the parity character on all `n` bits.
+
+So the sum
+
+```
+Finset.sum Finset.univ (fun x => (if f x then 1 else 0) * chi Finset.univ x)
+```
+
+is exactly the (unnormalized) Fourier coefficient at the full set. If the degree is `n`, then the top coefficient is nonzero, and therefore the sum cannot be zero.
+
+## How the Lean proof works
+
+The proof is structured in three logical steps:
+
+1. **Extract a nonzero top coefficient.**
+   It proves there exists a set `S` of size `n` such that `fourier_coeff f S ≠ 0`. This uses the assumption `degree f = n` and a contradiction argument: if all size-`n` coefficients were zero, the degree would be at most `n-1`.
+
+2. **Specialize to the full set.**
+   For `Fin n`, the only subset of size \(n\) is `Finset.univ`. The argument is:
+   - We have \(S \subseteq \text{Finset.univ}\) (any finset over `Fin n`)
+   - We have \(|S| = n\)
+   - But \(|\text{Finset.univ}| = n\) (since `Fintype.card (Fin n) = n`)
+   - A subset of a finite set with equal cardinality must be the whole set
+
+   Lean uses `Finset.eq_of_subset_of_card_le` to conclude \(S = \text{Finset.univ}\).
+
+3. **Rewrite the coefficient as a sum.**
+   After simplification, the coefficient is shown to be exactly the sum of `g(x)` over all `x`. Since the coefficient is nonzero, the sum is nonzero.
+
+In Lean, those steps appear as:
+
+```lean
+have h_fourier_coeff : ∃ S : Finset (Fin n), fourier_coeff f S ≠ 0 ∧ S.card = n := by
+  ...
+obtain ⟨ S, hS₁, hS₂ ⟩ := h_fourier_coeff
+simp_all +decide [ fourier_coeff ]
+have := Finset.eq_of_subset_of_card_le ( Finset.subset_univ S )
+...
+```
+
+The proof uses `simp_all` to unfold `fourier_coeff` and reduce to the explicit sum, and `Finset.eq_of_subset_of_card_le` to pin down `S = Finset.univ` from the cardinality equation.
+
+## Takeaway
+
+If a Boolean function has full Fourier degree, then its correlation with the full parity character is nonzero. The `g`-transform expectation encodes that correlation, so the sum (expectation) cannot vanish. This is a compact way to say: **full degree implies a nonzero top Fourier coefficient, which forces a nonzero global parity sum.**
 
 ---
 
-## 2. Fourier coefficients in the code
+This section introduces a convenient reindexing of the Huang matrix so that its rows and columns are indexed by `Fin (2^n)` instead of boolean functions `Fin n -> Bool`. It then proves that both the original and reindexed Huang matrices are symmetric. The main ideas are:
 
-### The definition
+- Build an explicit equivalence between boolean functions and `Fin (2^n)`.
+- Use `Matrix.reindex` to transport the Huang matrix across that equivalence.
+- Prove symmetry for the original matrix by induction on `n`.
+- Conclude symmetry for the reindexed matrix by rewriting via the equivalence.
 
-```lean
-fourier_coeff f S =
-  (sum over all x) ((if f x then 1 else 0) * chi S x) / 2^n
-```
-
-This is the average value of `f(x) * chi_S(x)` over all inputs `x`.
-
-### What is `chi S x`?
-
-`chi S x` is the parity character defined in **Section 3**:
+## 1. Reindexing boolean functions to `Fin (2^n)`
 
 ```lean
-chi S x = (-1)^{|{i ∈ S : x i = true}|}
+def boolFunEquivFin (n : ℕ) : (Fin n → Bool) ≃ Fin (2^n) :=
+  (Fintype.equivFin (Fin n → Bool)).trans (finCongr (by
+  norm_num [ Fintype.card_pi ]))
 ```
 
-It returns `+1` if an even number of coordinates in `S` are true, and `-1` if odd. This is the standard Fourier basis function for Boolean analysis.
+**What this does:**
+- `Fintype.equivFin` produces an equivalence between any finite type and `Fin (card _)`.
+- `Fin n -> Bool` has cardinality `2^n`. The proof uses `Fintype.card_pi` and `norm_num` to simplify the count.
+- `finCongr` adjusts the `Fin` index to exactly `Fin (2^n)`.
 
-### Expectation interpretation
+So `boolFunEquivFin n` is the canonical bridge between boolean functions on `n` bits and the `2^n` sized `Fin` type.
 
-The Fourier coefficient is the expectation of `f(x) · χ_S(x)` under the uniform distribution:
-
-```
-fourier_coeff f S = 𝔼_x[f(x) · χ_S(x)] = (1/2^n) · Σ_{x ∈ {0,1}^n} f(x) · χ_S(x)
-```
-
-where `f(x)` is treated as 0 or 1 (the `{0,1}` encoding). This measures how much `f` "aligns" with the parity pattern on `S`.
-
----
-
-## 3. Degree from Fourier support
-
-The second definition uses the Fourier coefficients to define the **degree**:
+## 2. The reindexed Huang matrix
 
 ```lean
-degree f =
-  sup (card S) over all S with fourier_coeff f S ≠ 0
+noncomputable def huang_matrix_fin (n : ℕ) : Matrix (Fin (2^n)) (Fin (2^n)) ℝ :=
+  Matrix.reindex (boolFunEquivFin n) (boolFunEquivFin n) (huang_matrix n)
 ```
 
-In words:
+`Matrix.reindex` transports a matrix along equivalences of row and column indices. Here we use the same equivalence for rows and columns, so we are simply relabeling the indices, not changing any numeric entries.
 
-- Look at every subset `S` of variables.
-- Keep only those where the Fourier coefficient is nonzero.
-- Take the maximum size of such a set.
+This gives a version of the Huang matrix whose index type matches the usual `2^n x 2^n` dimension found in linear algebra statements.
 
-This is exactly the **Fourier degree**: the largest subset size for which the Fourier expansion has a non‑zero coefficient.
+## 3. The original Huang matrix is symmetric
 
-**Convention for edge cases**: If `f` is the constant zero function, then all Fourier coefficients are zero, and `Finset.sup` over an empty set returns `0` (the lattice bottom for `ℕ`). So the constant zero function has degree 0. The constant one function has `fourier_coeff f ∅ = 1 ≠ 0` and all other coefficients zero, so it also has degree 0.
-
-### Intuition
-
-- Low degree means the function is well‑approximated by small‑interaction terms (few variables at a time).
-- High degree means the function needs large, global parity patterns to describe it.
-
----
-
-## 4. Connection to sensitivity
-
-**Sensitivity** measures how many single‑bit flips can change the function's value at a given input. For a Boolean function `f`, the sensitivity at input `x` counts how many coordinates `i` satisfy:
-
-```
-  f(x) ≠ f(x with bit i flipped)
+```lean
+theorem huang_matrix_isSymm (n : ℕ) : (huang_matrix n).IsSymm := by
+  induction' n with n ih;
+  · exact rfl
+  · -- By definition of huang_matrix, we know that huang_matrix (n + 1) is a block matrix ...
+    have h_block : huang_matrix (n + 1) = Matrix.reindex (finSuccEquiv_huang_custom n).symm
+      (finSuccEquiv_huang_custom n).symm
+      (Matrix.fromBlocks (huang_matrix n) (1 : Matrix (Fin n → Bool) (Fin n → Bool) ℝ)
+        (1 : Matrix (Fin n → Bool) (Fin n → Bool) ℝ) (-huang_matrix n)) := by
+      rfl;
+    simp_all +decide [ Matrix.IsSymm ];
+    ext i j; simp +decide [ Matrix.fromBlocks_transpose, ih ] ;
 ```
 
-The maximum of that count over all `x` is the sensitivity of `f`.
+**Key idea:** the matrix for `n+1` is built as a block matrix (with `huang_matrix n` and `-huang_matrix n` on the diagonal, and identities off-diagonal), then reindexed to match the boolean hypercube structure. The proof:
 
-### Why Fourier degree matters
+- Proceeds by induction on `n`.
+- For `n = 0`, symmetry is `rfl`.
+- For `n + 1`, it unfolds the block structure and uses the inductive hypothesis that `huang_matrix n` is symmetric.
+- `simp` with `Matrix.fromBlocks_transpose` shows the block matrix is symmetric.
 
-Fourier analysis provides a powerful bridge between algebraic structure and combinatorial measures like sensitivity:
+This is the structural heart of the symmetry result.
 
-- A nonzero Fourier coefficient on a large set `S` means the function depends (in a parity sense) on many variables at once.
-- That kind of global dependence tends to force the function to be sensitive to bit flips.
+## 4. Symmetry survives reindexing
 
-More concretely:
-
-- If a function has **high Fourier degree**, then there must be some input where many variables matter. That often implies higher sensitivity.
-- Conversely, if the function has very low sensitivity everywhere, the Fourier expansion tends to concentrate on small sets, leading to low degree.
-
-This is the basic intuition behind the **Sensitivity Conjecture** (now a theorem, proved by Huang 2019):
-
-**Theorem (Sensitivity Conjecture)**: For any Boolean function `f : {0,1}^n → {0,1}`,
-```
-sensitivity(f) ≥ √(degree(f))
+```lean
+theorem huang_matrix_fin_isSymm (n : ℕ) : (huang_matrix_fin n).IsSymm := by
+  exact funext fun i => funext fun j => huang_matrix_isSymm n |>.apply _ _
 ```
 
-This says that high Fourier degree implies high sensitivity. The Lean formalization in this project proves exactly this inequality. The converse direction (`degree(f) ≤ sensitivity(f)^2`) is easier and was known earlier; together they show that sensitivity and degree are polynomially related.
+A reindexing does not change the entries, only the labels. The proof simply reduces symmetry of the reindexed matrix to symmetry of the original by expanding definitions.
 
----
+In other words, symmetry is invariant under relabeling of indices by equivalence.
 
 ## 5. Takeaway
 
-- `fourier_coeff f S` is the normalized correlation of `f` with the parity character on `S`.
-- `degree f` is the maximum size of a subset with a nonzero Fourier coefficient.
-- High degree captures global interactions among many variables.
-- Sensitivity captures how fragile `f` is to individual bit flips.
-- Fourier degree and sensitivity are tightly linked, making Fourier analysis a natural tool for studying sensitivity.
+- `boolFunEquivFin` is the bridge from boolean function indices to `Fin (2^n)`.
+- `huang_matrix_fin` is a pure reindexing, so algebraic properties such as symmetry carry over immediately.
+- The core symmetry proof relies on the block decomposition of the Huang matrix and an induction on dimension.
+
+If you want to connect this to linear algebra over finite-dimensional real vector spaces, `huang_matrix_fin` is the version with the standard `2^n x 2^n` index type, and `huang_matrix_fin_isSymm` confirms it is symmetric in the usual sense.
 
 ---
 
-If you want, the next step is to look at how `chi S x` is defined in the Lean code and how the `{0,1}` output encoding compares to the more common `{−1,+1}` normalization—this will clarify constants and sign conventions in later lemmas.
+This section proves the full list of eigenvalues of the Huang matrix (in the `Fin`-indexed form) and shows that they are exactly half negative and half positive square roots.
+
+We will walk through the proof structure and explain the key lemmas.
+
+## Goal: the complete spectrum
+
+For the Huang matrix on dimension `n+1` (size `2^(n+1)`), the theorem proved is:
+
+- The sorted eigenvalues are:
+
+```
+[-sqrt(n+1), ..., -sqrt(n+1)]  (2^n times)
+[+sqrt(n+1), ..., +sqrt(n+1)]  (2^n times)
+```
+
+In other words, the spectrum is exactly two values, `-sqrt(n+1)` and `+sqrt(n+1)`, each with multiplicity `2^n`.
+
+In Lean, this appears as:
+
+```lean
+lemma huang_eigenvalues_eq_list_succ (n : ℕ) :
+  let evs := sorted_eigenvalues (huang_matrix_fin (n + 1)) (huang_matrix_fin_isSymm (n + 1))
+  evs = List.replicate (2^n) (-Real.sqrt (n + 1)) ++
+        List.replicate (2^n) (Real.sqrt (n + 1))
+```
+
+The rest of the section is a chain of lemmas that make this statement inevitable.
+
+## Step 1: Every eigenvalue squares to `n`
+
+The theorem `huang_eigenvalues_sq_eq_n` shows that for the `Fin`-indexed Huang matrix, *every eigenvalue* satisfies
+
+```
+mu^2 = n
+```
+
+Sketch of the proof:
+
+1. Use the matrix identity `A^2 = n * I` (proved earlier as `huang_matrix_fin_sq`).
+2. If `A v = mu v`, then apply `A` again to get `A (A v) = mu^2 v`.
+3. Replace `A^2` with `n I` to get `n v` on the left, so `mu^2 v = n v`.
+4. Since `v != 0`, conclude `mu^2 = n`.
+
+This lemma is then applied to every element of `sorted_eigenvalues` to state that *every entry in the list squares to `n`*.
+
+## Step 2: Sum of eigenvalues equals trace
+
+`sum_sorted_eigenvalues_eq_trace` proves that for a symmetric real matrix, the sum of the sorted eigenvalues equals the trace:
+
+```
+(sorted_eigenvalues A hA).sum = A.trace
+```
+
+This uses the standard fact that the trace of a symmetric matrix is the sum of its (real) eigenvalues, and shows that sorting does not change the sum.
+
+## Step 3: The Huang matrix has trace 0
+
+`huang_matrix_fin_trace` uses reindexing to transfer the earlier result that the Huang matrix has trace 0:
+
+```
+Matrix.trace (huang_matrix_fin n) = 0
+```
+
+This gives the sum of all eigenvalues immediately:
+
+```
+(sum of eigenvalues) = 0
+```
+
+## Step 4: A list lemma for values that square to `c^2`
+
+Several list lemmas are introduced to characterize a list that:
+
+- has length `2m`,
+- all elements satisfy `x^2 = c^2`,
+- and the sum is 0,
+- and the list is sorted.
+
+The key lemma is:
+
+```lean
+sorted_list_of_sq_eq_and_sum_zero
+```
+
+It concludes:
+
+```
+L = List.replicate m (-c) ++ List.replicate m c
+```
+
+The logic is simple:
+
+- If `x^2 = c^2`, then `x = c` or `x = -c`.
+- If the sum is 0 and `c != 0`, then there must be the same number of `c` and `-c`.
+- Sorting forces all `-c` values to appear first.
+
+This lemma is the engine behind the final spectral statement.
+
+## Step 5: Apply to `n+1`
+
+With the ingredients in place, the final proof is short:
+
+- The list `sorted_eigenvalues` has length `2^(n+1)`.
+- Every entry squares to `n+1` (Step 1).
+- The sum of the list is 0 (Steps 2 and 3).
+- The list is sorted (by construction).
+
+Therefore the list is exactly `2^n` copies of `-sqrt(n+1)` followed by `2^n` copies of `+sqrt(n+1)`.
+
+This is the **complete spectrum** of the Huang matrix in the `Fin`-indexed model.
+
+## Takeaway
+
+The section combines three classic facts:
+
+1. `A^2 = n I` forces eigenvalues to satisfy `mu^2 = n`.
+2. Trace equals sum of eigenvalues.
+3. Sorting plus a zero sum forces exact multiplicities.
+
+As a result, the Huang matrix has only two eigenvalues, `-sqrt(n)` and `+sqrt(n)`, with equal multiplicity.

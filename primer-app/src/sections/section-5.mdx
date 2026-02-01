@@ -1,136 +1,541 @@
-# Section 5: Type Equivalences for the Huang Matrix Indexing
+# Section 5: Spectral bounds and interlacing
 
-This section defines three explicit type equivalences in Lean. They are not just abstract conveniences: they are exactly the "index bookkeeping" needed to describe the recursive block structure of the Huang matrix when rows/columns are indexed by Boolean hypercube vertices.
-
-Below is what each definition does, how it works, and why it matters for the Huang matrix.
 
 ---
 
-## 1) `boolProdEquivSum_custom` : `Bool × α ≃ α ⊕ α`
+This section has two themes:
 
-**Lean definition**
+1. The Huang matrix has entries whose **absolute values** match the adjacency matrix of the hypercube.
+2. Any eigenvalue of a real matrix is bounded in absolute value by the **maximum absolute row sum**.
+
+We'll walk through both statements and how the Lean proofs are structured.
+
+---
+
+## 1. Absolute values give the hypercube adjacency
+
+### Statement
+
 ```lean
-def boolProdEquivSum_custom {α : Type*} : Bool × α ≃ α ⊕ α where
-  toFun := fun p => if p.1 then Sum.inr p.2 else Sum.inl p.2
-  invFun := fun s => match s with
-    | Sum.inl a => (false, a)
-    | Sum.inr a => (true, a)
-  left_inv := by
-    rintro ⟨ _ | _, _ ⟩ <;> simp +decide
-  right_inv := by
-    rintro (a | a) <;> rfl
+theorem abs_huang_eq_adjacency (n : ℕ) (i j : Fin n → Bool) :
+  |huang_matrix n i j| =
+    if (Finset.filter (fun k => i k ≠ j k) Finset.univ).card = 1
+    then 1 else 0 := by
+  ...
 ```
 
-### What it means
-- A pair `(b, a)` with `b : Bool` and `a : α` can be seen as **"choose left or right copy of α"** depending on `b`.
-- Thus `Bool × α` is equivalent to `α ⊕ α` (a sum of two copies of `α`).
+Interpretation:
 
-### How it works
-- **Forward map**: send `(true, a)` to `Sum.inr a` and `(false, a)` to `Sum.inl a`.
-- **Inverse map**: send `Sum.inl a` back to `(false, a)`, and `Sum.inr a` back to `(true, a)`.
-- The proofs `left_inv` and `right_inv` show these two functions undo each other.
+- The vertices of the `n`-dimensional hypercube are functions `Fin n → Bool`.
+- Two vertices `i` and `j` are adjacent exactly when they differ in **one** coordinate.
+- The proof shows that the absolute value of the Huang matrix entry is `1` precisely in that case, and `0` otherwise.
 
-### Why it matters
-When you split the Boolean hypercube by the first coordinate, every vertex is "either in the 0-slice or the 1-slice." The sum type `α ⊕ α` captures exactly this "either/or" split, which is perfect for block matrices: the two summands correspond to two diagonal blocks.
+So `|huang_matrix n|` is the adjacency matrix of the hypercube.
+
+### Proof idea
+
+The proof is by induction on `n`. There are two main ingredients:
+
+1. **Base case (`n = 0`)**: There is only one vertex. The proof is done by case analysis on the only possible indices.
+2. **Inductive step**: The Huang matrix for size `n+2` is defined in a block form
+   ```lean
+   [  A   1
+      1  -A ]
+   ```
+   after reindexing. This induces a split into two cases based on whether the first coordinates agree:
+   - If `i 0 = j 0`, the entry reduces to the corresponding entry of the smaller Huang matrix.
+   - If `i 0 ≠ j 0`, the entry comes from a `1` block, but only when the remaining coordinates are identical.
+
+The proof formalizes this with a split lemma `h_split` that matches this block structure.
+Then it rewrites the "differ in exactly one coordinate" condition to separate the first coordinate from the rest. The cardinality calculation is then handled by `simp` and `Finset.card` lemmas.
 
 ---
 
-## 2) `finSuccEquiv_custom` : `(Fin (n+1) → α) ≃ α × (Fin n → α)`
+## 2. Eigenvalues bounded by max absolute row sum
 
-**Lean definition**
+### Statement
+
 ```lean
-def finSuccEquiv_custom (n : ℕ) (α : Type*) : (Fin (n + 1) → α) ≃ α × (Fin n → α) where
-  toFun f := (f 0, f ∘ Fin.succ)
-  invFun p := Fin.cons p.1 p.2
-  left_inv f := by
-    ext i
-    refine Fin.cases ?_ ?_ i <;> simp
-  right_inv p := by
-    ext <;> simp
+theorem eigenvalue_le_max_row_sum {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (μ : ℝ)
+  (hμ : Module.End.HasEigenvalue (Matrix.toLin' A) μ) :
+  ∃ i : Fin n, |μ| ≤ Finset.sum Finset.univ (fun j => |A i j|) := by
+  ...
 ```
 
-### What it means
-- A function `f : Fin (n+1) → α` is completely determined by:
-  1) its value at `0`, and
-  2) its values on the remaining indices `{1, …, n}` (which are in bijection with `Fin n`).
-- So such a function is equivalent to a pair `(α, Fin n → α)`.
+Interpretation:
 
-### How it works
-- **Forward map**: `f ↦ (f 0, f ∘ Fin.succ)`.
-  - `Fin.succ : Fin n → Fin (n+1)` is the canonical injection that maps `i` to `i+1`.
-  - So `f ∘ Fin.succ` is the "tail" of `f`, giving values at indices `1, 2, ..., n`.
-- **Inverse map**: `Fin.cons p.1 p.2` rebuilds a function from a head value `p.1` and tail `p.2`.
-  - `Fin.cons : α → (Fin n → α) → (Fin (n+1) → α)` prepends a head to a tail.
-- The proof uses `Fin.cases` to split the index into "zero" vs. "successor."
+- If `μ` is an eigenvalue of `A`, then there exists a row `i` whose absolute row sum bounds `|μ|`.
+- This is a standard norm estimate: the spectral radius is bounded by the max row sum norm.
 
-### Why it matters
-Vertices of the Boolean hypercube of dimension `n+1` are functions `Fin (n+1) → Bool`. This equivalence lets you pull out the first coordinate explicitly as a separate piece. It is the fundamental "peel off the first bit" operation.
+### Proof idea
+
+The proof follows the textbook argument:
+
+1. **Pick an eigenvector** `v` with `A.mulVec v = μ • v`.
+2. **Choose an index** `i` where `|v i|` is maximal (this is done via `Finset.exists_max_image`).
+3. **Compare absolute values**:
+   ```lean
+   |μ * v i| = |(A.mulVec v) i| = |∑ j, A i j * v j|
+   ≤ ∑ j, |A i j| * |v j|
+   ≤ ∑ j, |A i j| * |v i|
+   ```
+4. If `|v i| = 0`, then `v = 0`, which contradicts the eigenvector being nonzero. So we can divide by `|v i|` and obtain the desired bound on `|μ|`.
+
+In Lean, the proof is structured around these steps:
+
+- `obtain ⟨v, hv⟩` extracts a nonzero eigenvector.
+- `obtain ⟨i, hi⟩` chooses the maximal coordinate.
+- `h_bound` proves the inequality on `|μ * v i|` using `abs_sum_le_sum_abs` and the maximality of `|v i|`.
+- The final argument shows `|v i| > 0` and rearranges the inequality to isolate `|μ|`.
 
 ---
 
-## 3) `finSuccEquiv_huang_custom` : `(Fin (n+1) → Bool) ≃ (Fin n → Bool) ⊕ (Fin n → Bool)`
+## Takeaway
 
-**Lean definition**
+- The first theorem identifies the **combinatorial structure** of the Huang matrix: its absolute values encode hypercube adjacency.
+- The second theorem gives a **spectral bound**: any eigenvalue is controlled by the maximum absolute row sum.
+
+Together, these results make it possible to translate combinatorial properties of the hypercube into spectral bounds on the Huang matrix.
+
+---
+
+This section proves a standard spectral radius bound: for a symmetric real matrix whose entries are supported on a simple graph and bounded by 1 in absolute value, the largest eigenvalue is at most the graph's maximum degree.
+
+## Statement (informal)
+Let `A` be an `n x n` real symmetric matrix. Let `G` be a simple graph on the same vertex set. Assume
+
+- `|A i j| <= 1` when `G.Adj i j`, and
+- `|A i j| <= 0` otherwise (so those entries are 0).
+
+Then the largest eigenvalue of `A` is at most `G.maxDegree`.
+
+In Lean, this is packaged as:
+
+- `A.IsSymm` gives symmetry (required for real eigenvalues).
+- `sorted_eigenvalues A hA` is a list of eigenvalues, sorted in **nondecreasing order** (i.e., ascending: \(\lambda_1 \leq \lambda_2 \leq \cdots \leq \lambda_n\)).
+- `lambda_max` is `getLast` of that list, i.e., the **largest** eigenvalue \(\lambda_n\).
+- The conclusion is `lambda_max <= G.maxDegree`.
+
+**Type context**: `A : Matrix (Fin n) (Fin n) ℝ` is a real matrix indexed by `Fin n`. The hypothesis `hA : A.IsSymm` asserts \(A = A^T\).
+
+## Proof idea in one paragraph
+The largest eigenvalue is bounded by the maximum absolute row sum (a standard lemma for eigenvalues). Each row sum is bounded by the number of neighbors, because each adjacent entry has absolute value at most 1 and each non-adjacent entry is 0. The neighbor count is the degree, which is at most the maximum degree. Chaining these inequalities gives the bound.
+
+## How the Lean proof is organized
+
+### 1. Use a general eigenvalue bound
+The proof starts with a lemma already in the library:
+
 ```lean
-def finSuccEquiv_huang_custom (n : ℕ) : (Fin (n + 1) → Bool) ≃ (Fin n → Bool) ⊕ (Fin n → Bool) :=
-  Equiv.trans
-    (finSuccEquiv_custom n Bool)
-    (boolProdEquivSum_custom)
+eigenvalue_le_max_row_sum A mu hmu
 ```
 
-### What it means
-This simply **composes** the previous two equivalences:
-1) First, split a Boolean function on `Fin (n+1)` into `(Bool, Fin n → Bool)`.
-2) Then turn `(Bool, Fin n → Bool)` into a sum of two copies of `Fin n → Bool`.
+Here `hmu : Module.End.HasEigenvalue (Matrix.toLin' A) mu` is a proof that \(\mu\) is an eigenvalue of \(A\). The lemma returns an index \(i\) such that:
+\[
+|\mu| \leq \sum_j |A_{ij}|
+\]
 
-So we get a clean equivalence:
+This is the standard "eigenvalue bounded by max row sum" inequality, a consequence of the Gershgorin circle theorem.
 
-```
-(Fin (n+1) → Bool)  ≃  (Fin n → Bool) ⊕ (Fin n → Bool)
-```
-
-**Summand ordering convention**: The composition sends:
-- `(false, tail)` to `Sum.inl tail` — the "left" or "top" block
-- `(true, tail)` to `Sum.inr tail` — the "right" or "bottom" block
-
-This means vertices with first coordinate `false` go to `Sum.inl`, and vertices with first coordinate `true` go to `Sum.inr`. This ordering determines which block of the matrix corresponds to which summand.
-
-`Equiv.trans` composes equivalences: if `e₁ : A ≃ B` and `e₂ : B ≃ C`, then `Equiv.trans e₁ e₂ : A ≃ C`.
-
-### Why it matters for the Huang matrix
-The Huang matrix `A_n` is indexed by Boolean hypercube vertices, i.e.
+### 2. Compare row sums to graph degree
+For that specific row `i`, the code proves
 
 ```
-indices_n := Fin n → Bool
+sum_j |A i j| <= sum_{j in G.neighborFinset i} 1
 ```
 
-The recursion for `A_{n+1}` is a **block matrix** with four `2^n × 2^n` blocks:
+because of the hypothesis `h_adj`:
 
-- top-left: `A_n`
-- top-right: `I`
-- bottom-left: `I`
-- bottom-right: `-A_n`
+- if `G.Adj i j`, then `|A i j| <= 1`
+- otherwise `|A i j| <= 0`
 
-To even *state* this block structure in Lean, you must identify the index set for dimension `n+1` with **two copies** of the index set for dimension `n`.
+So summing over all `j` is dominated by summing `1` over neighbors. This second sum is exactly the degree of `i`.
 
-That is exactly what `finSuccEquiv_huang_custom` gives you:
+### 3. Move from degree to maximum degree
+Finally, use the graph lemma
+
+```lean
+G.degree_le_maxDegree i
+```
+
+which gives
 
 ```
-indices_{n+1}  ≃  indices_n ⊕ indices_n
+G.degree i <= G.maxDegree
 ```
 
-Once you have this equivalence, you can:
-- reindex rows and columns of `A_{n+1}` into "upper" and "lower" halves,
-- align those halves with the two copies of `indices_n`, and
-- express the recursion as a block matrix in a type-correct way.
+Combining the inequalities yields
 
-Without this explicit equivalence, the block recursion is only informal. With it, Lean can treat `A_{n+1}` as a matrix indexed by a sum type and accept the block decomposition.
+```
+mu <= G.maxDegree
+```
+
+for any eigenvalue `mu`.
+
+### 4. Apply the bound to the largest eigenvalue
+The list `sorted_eigenvalues A hA` contains all eigenvalues. The proof shows every element of this list is bounded by `G.maxDegree`, so the last element (the maximum) is also bounded. The non-emptiness of the list is guaranteed by `hn : n != 0`.
+
+## Practical reading of the Lean code
+
+Key constructs:
+
+- `h_bound`: proves every eigenvalue `mu` is `<= G.maxDegree`.
+- `h_sorted`: lifts that bound to every element of `sorted_eigenvalues`.
+- `List.getLast_mem` plugs the bound into `lambda_max`.
+
+The only nontrivial steps are the sum estimate and the passage from an eigenvalue proof to the row-sum lemma. Those are handled by `eigenvalue_le_max_row_sum` and a short inequality chain using `simp` and `Finset.sum_le_sum`.
+
+## Why this is called a spectral radius bound
+For symmetric real matrices, the spectral radius equals the largest absolute eigenvalue, and the largest eigenvalue is the last element of the sorted list. Thus bounding `lambda_max` bounds the spectral radius as well.
+
+## Side note: Rayleigh quotient
+The file ends with a reminder:
+
+"The Rayleigh quotient of a vector x with respect to a matrix A is <x, Ax> / <x, x>."
+
+This is the classical tool for characterizing eigenvalues of symmetric matrices, and it is another route to the same bound. The Lean proof above uses a library lemma instead of explicitly working with the Rayleigh quotient.
 
 ---
+
+This section introduces the Rayleigh quotient, the Courant-Fischer min-max characterization, and several supporting lemmas about eigenvalues of symmetric matrices. The Lean code works with real symmetric matrices and vectors indexed by `Fin n`.
+
+## Rayleigh quotient
+
+The Rayleigh quotient of a matrix `A` and a nonzero vector `x` is
+
+```
+R_A(x) = (x^T A x) / (x^T x).
+```
+
+In Lean:
+
+```lean
+def rayleigh_quotient {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (x : Fin n → ℝ) : ℝ :=
+  dotProduct x (A.mulVec x) / dotProduct x x
+```
+
+Key properties used later:
+
+- **Reindexing invariance.** If you change coordinates by a bijection of indices, the Rayleigh quotient is unchanged.
+- **Zero padding and principal submatrices.** If you embed a vector supported on a subset `S` into the full space (padding with zeros outside `S`), its Rayleigh quotient with respect to `A` matches the Rayleigh quotient of the corresponding principal submatrix.
+
+These facts let you compare eigenvalue information between a matrix and its principal submatrices.
+
+## Courant-Fischer (inf-sup) definition
+
+The Courant-Fischer min-max principle characterizes the `k`-th eigenvalue as a min over subspaces of a max of the Rayleigh quotient. The Lean definition in this file is the **inf-sup** form:
+
+```lean
+def courant_fischer_inf_sup {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (k : Fin n) : ℝ :=
+  ⨅ (V : Submodule ℝ (Fin n → ℝ)) (_ : Module.finrank ℝ V = k + 1),
+    ⨆ (x : {x : V // x.1 ≠ 0}), rayleigh_quotient A x.1
+```
+
+Read it as:
+
+- take all subspaces `V` of dimension `k + 1`,
+- for each `V` take the supremum of `R_A(x)` over nonzero `x` in `V`,
+- then take the infimum of those suprema.
+
+## Eigenbasis expansion and Rayleigh bounds
+
+Much of the section expands vectors in an orthonormal eigenbasis and uses the sorted eigenvalues. The core idea:
+
+If
+
+```
+x = sum_i c_i v_i
+```
+
+with `v_i` orthonormal eigenvectors, then
+
+```
+R_A(x) = (sum_i c_i^2 * lambda_i) / (sum_i c_i^2).
+```
+
+This immediately implies:
+
+- **Upper bound by the largest eigenvalue.** If `x != 0`, then `R_A(x) <= lambda_max`.
+- **Lower bound on a top-eigenspace span.** If `x` lives in the span of eigenvectors indexed `i >= k`, then `R_A(x) >= lambda_k`.
+
+In Lean this appears as:
+
+- `rayleigh_le_max_eigenvalue` for the upper bound.
+- `rayleigh_ge_of_mem_span_top` for the lower bound on the top-eigenspace span.
+
+Both proofs expand `x` in the orthonormal eigenbasis given by `exists_orthonormal_basis_sorted` and use monotonicity of the sorted eigenvalues.
+
+## Dimension arguments and nontrivial intersection
+
+To apply Courant-Fischer, we need a nonzero vector in the intersection of two subspaces. There are two related lemmas:
+
+1. **Intersection dimension is positive.**
+   If `U` has dimension `n - k` and `V` has dimension `k + 1` in an `n`-dimensional space, then `U ∩ V` is nontrivial.
+
+2. **Specialized intersection for eigenvector spans.**
+   In `le_sup_rayleigh_of_dim_eq_succ`, the code defines
+   `U = span {v_i | i >= k}`.
+   Since `dim U = n - k` and `dim V = k + 1`, the intersection contains a nonzero vector `x`.
+
+This nonzero `x` is used to show that for any `V` of dimension `k+1`, the supremum of the Rayleigh quotient on `V` is at least `lambda_k`.
+
+## Courant-Fischer inequality (one direction)
+
+The lemma
+
+```lean
+le_sup_rayleigh_of_dim_eq_succ
+```
+
+proves the key inequality:
+
+```
+lambda_k <= sup_{x in V, x != 0} R_A(x)
+```
+
+for every `V` with `dim V = k + 1`. The proof is:
+
+- pick a nonzero `x` in `U ∩ V` using the dimension argument,
+- apply `rayleigh_ge_of_mem_span_top` to get `R_A(x) >= lambda_k`,
+- conclude `lambda_k <= sup_{x in V} R_A(x)`.
+
+This is the "inf-sup" half of Courant-Fischer.
+
+## Principal submatrices
+
+The file defines principal submatrices and reindexing:
+
+```lean
+def principal_submatrix {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (S : Finset (Fin n)) : Matrix S S ℝ :=
+  A.submatrix Subtype.val Subtype.val
+
+
+def principal_submatrix_fin {n : ℕ} (A : Matrix (Fin n) (Fin n) ℝ) (S : Finset (Fin n)) :
+  Matrix (Fin (Fintype.card {x // x ∈ S})) (Fin (Fintype.card {x // x ∈ S})) ℝ :=
+  Matrix.reindex (Fintype.equivFin {x // x ∈ S}) (Fintype.equivFin {x // x ∈ S}) (principal_submatrix A S)
+```
+
+There is a lemma that the reindexed principal submatrix remains symmetric if `A` is symmetric. This supports eigenvalue comparisons between a matrix and its principal submatrices using the Rayleigh quotient with zero-padded vectors.
+
+## Takeaways
+
+- The Rayleigh quotient is the core numerical bridge between vectors and eigenvalues.
+- Reindexing and zero-padding allow precise transfer between submatrices and the original matrix.
+- The Courant-Fischer min-max principle uses dimension arguments to guarantee vectors in intersections of subspaces.
+- In Lean, these ideas appear as lemmas about reindexing, spans, finrank, and eigenbasis expansions.
+
+If you want to extend this section, the next natural step is to formalize the full equality of Courant-Fischer (both directions), and then derive interlacing inequalities for eigenvalues of principal submatrices.
+
+---
+
+This section formalizes a standard interlacing fact for symmetric matrices:
+
+> If you take a symmetric matrix `A` and restrict it to a principal submatrix `subA`
+> indexed by a nonempty set `S`, then the **largest eigenvalue** of `subA` is **at least**
+> the `(m-1)`-th eigenvalue of `A`, where `m = |S|`.
+
+In Lean, the lemma is called `eigenvalue_interlacing_max`.
+
+## The mathematical statement (informal)
+
+Let:
+
+- `A` be an `n x n` real symmetric matrix,
+- `S` be a nonempty subset of `{0,1,...,n-1}` with `m = |S|`,
+- `subA` be the principal submatrix of `A` indexed by `S`,
+- `evs_A` be the sorted list of eigenvalues of `A` (in nondecreasing order),
+- `evs_sub` be the sorted list of eigenvalues of `subA`.
+
+Then:
+
+```
+max_eigenvalue(subA) >= evs_A[m-1].
+```
+
+In the Lean lemma, `max_eigenvalue(subA)` is expressed as
+`evs_sub.getLast`.
+
+This is the "top-end" half of eigenvalue interlacing: the largest eigenvalue of a
+principal submatrix sits **above** the `(m-1)`-th eigenvalue of the full matrix.
+
+## How the proof works
+
+The proof is a clean application of the min-max principle (a.k.a. Courant–Fischer) plus
+a Rayleigh quotient comparison.
+
+### 1. The subspace of supported vectors
+
+Define a subspace `V` of `R^n` consisting of vectors supported on `S`:
+
+- entries outside `S` are zero,
+- dimension of `V` is `m = |S|`.
+
+In Lean this is `subspace_of_support S` and the dimension lemma is
+`subspace_of_support_dim S`.
+
+### 2. Min-max principle gives a lower bound
+
+The min-max principle says:
+
+```
+ev_A[m-1] <= sup_{x in V, x != 0} R_A(x)
+```
+
+where `R_A(x)` is the Rayleigh quotient of `A` at `x`.
+
+Lean encapsulates this with `le_sup_rayleigh_of_dim_eq_succ`.
+
+### 3. Rayleigh quotient is preserved on the submatrix
+
+For any nonzero `x` in `V`, you can compress it to a vector `y` in `R^m`
+by keeping only coordinates in `S`.
+
+Then:
+
+```
+R_A(x) = R_subA(y).
+```
+
+This is the technical heart of the proof: it matches the quadratic form
+of `A` on a supported vector with the quadratic form of the principal
+submatrix.
+
+In Lean this is the long lemma `h_rayleigh_eq`:
+
+- it builds a coordinate map from `x` to `y`,
+- shows the Rayleigh quotients agree.
+
+### 4. Rayleigh quotient is at most the max eigenvalue
+
+For symmetric matrices, the Rayleigh quotient is always bounded by the
+maximum eigenvalue:
+
+```
+R_subA(y) <= max_eigenvalue(subA).
+```
+
+Lean uses `rayleigh_le_max_eigenvalue` for this.
+
+### 5. Put it together
+
+Chaining all inequalities:
+
+```
+ev_A[m-1]
+  <= sup_{x in V} R_A(x)
+  =  sup_{y} R_subA(y)
+  <= max_eigenvalue(subA).
+```
+
+This yields the interlacing bound:
+
+```
+max_eigenvalue(subA) >= ev_A[m-1].
+```
+
+## Key Lean objects and lemmas
+
+- `principal_submatrix_fin A S`: principal submatrix indexed by `S`.
+- `principal_submatrix_fin_isSymm`: symmetry is preserved.
+- `sorted_eigenvalues A hA`: sorted eigenvalues list.
+- `subspace_of_support S`: vectors supported on `S`.
+- `le_sup_rayleigh_of_dim_eq_succ`: min-max inequality.
+- `rayleigh_le_max_eigenvalue`: Rayleigh quotient bounded by max eigenvalue.
+
+## Why this matters
+
+Interlacing is a core tool in spectral graph theory and matrix analysis.
+Here it is applied to principal submatrices, which correspond to restricting
+the quadratic form to a coordinate subspace. This lemma isolates the
+**maximum eigenvalue** bound that is later used to show large principal
+submatrices inherit large eigenvalues.
+
+---
+
+This section explains the Lean lemma
+`huang_submatrix_max_eigenvalue_ge_sqrt_n`, which proves a lower bound on the
+largest eigenvalue of a principal submatrix of the Huang matrix.
+
+## The mathematical claim
+
+Let `n` be a positive integer, and let `S` be a subset of the `2^n` indices with
+`|S| > 2^(n-1)`. Consider the principal submatrix `subA` of the Huang matrix
+`A = huang_matrix_fin n` obtained by restricting to the rows and columns in `S`.
+Then the largest eigenvalue of `subA` is at least `sqrt n`.
+
+In other words, any principal submatrix of size strictly larger than half the
+rows must inherit an eigenvalue of size at least `sqrt n`.
+
+## How the lemma is structured in Lean
+
+The lemma has the following shape (simplified):
+
+- `subA` is defined as `principal_submatrix_fin (huang_matrix_fin n) S`.
+- `h_subA` is a proof that `subA` is symmetric, so its eigenvalues are real.
+- `evs_sub` is the sorted list of eigenvalues of `subA`.
+- The lemma concludes that `evs_sub.getLast ... >= Real.sqrt n`.
+
+Lean uses `getLast` with a proof that the list of eigenvalues is nonempty.
+That nonemptiness follows from the fact that `S.card > 0`.
+
+## Key ingredients in the proof
+
+### 1) Interlacing of eigenvalues
+
+The proof starts by applying a standard interlacing theorem for principal
+submatrices:
+
+- If you take a symmetric matrix `A` and a principal submatrix `subA`, then
+  the eigenvalues of `subA` interlace those of `A`.
+- In particular, the maximum eigenvalue of `subA` is at least the
+  `(m-1)`-th eigenvalue of `A`, where `m = |S|`.
+
+In Lean, this is implemented by `eigenvalue_interlacing_max`, which yields
+
+```
+max_eigenvalue(subA) >=
+  (sorted_eigenvalues A).get ⟨m - 1, ...⟩
+```
+
+The index proof is bookkeeping: it shows `m-1` is within range because
+`m <= 2^n` and `m > 0`.
+
+### 2) Explicit spectrum of the Huang matrix
+
+A separate lemma `huang_eigenvalues_eq_list` provides the full eigenvalue list
+of the Huang matrix:
+
+```
+[-sqrt n, ..., -sqrt n] (2^(n-1) times)
+++
+[+sqrt n, ..., +sqrt n] (2^(n-1) times)
+```
+
+So the sorted eigenvalues are a block of negative values followed by a block of
+positive values, with `2^(n-1)` copies of each.
+
+### 3) Positioning the index
+
+Because `m = |S| > 2^(n-1)`, the `(m-1)`-th eigenvalue of the full Huang matrix
+falls in the positive block. That entry is exactly `+sqrt n`.
+
+Lean encodes this by rewriting with the explicit eigenvalue list and using a
+case split in `List.getElem_append` to show the index lands in the right half.
+
+### 4) Final inequality
+
+Combining interlacing with the explicit spectrum, the proof concludes
+
+```
+max_eigenvalue(subA) >= sqrt n.
+```
+
+This is exactly the statement in the lemma.
 
 ## Summary
-- `boolProdEquivSum_custom` turns a Boolean choice into a sum type.
-- `finSuccEquiv_custom` peels off the first coordinate of a function on `Fin (n+1)`.
-- `finSuccEquiv_huang_custom` combines both to split the Boolean hypercube into two copies of the `n`-dimensional hypercube.
 
-This is precisely the indexing trick needed to define the Huang matrix recursion as a block matrix in Lean.
+The lemma is a standard application of eigenvalue interlacing and the explicit
+spectrum of the Huang matrix. The key point is that any principal submatrix with
+more than half the rows must inherit a large positive eigenvalue, because the
+full matrix has `2^(n-1)` copies of `+sqrt n` and interlacing forces the submatrix
+maximum to be at least one of them.

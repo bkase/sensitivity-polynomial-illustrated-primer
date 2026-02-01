@@ -1,135 +1,131 @@
-# Section 7: Why A² = nI for the Huang Matrix, and What That Means for Eigenvalues
+# Section 7: Hypercube graph and adjacency bridge
 
-This section proves a key identity for the Huang matrix `huang_matrix n`:
 
-```
-(huang_matrix n)^2 = n * I
-```
+---
 
-where `I` is the identity matrix of the same size. In Lean, this appears as:
+This section formalizes the n-dimensional hypercube graph in Lean and records a few key properties that connect adjacency, parity, and induced subgraphs. The vertices are Boolean vectors of length `n`, modeled as functions `Fin n -> Bool`.
 
-```lean
-theorem huang_matrix_sq (n : ℕ) :
-  (huang_matrix n) ^ 2 = (n : ℝ) • (1 : Matrix (Fin n → Bool) (Fin n → Bool) ℝ)
-```
+## 1. Defining the hypercube graph
 
-Here `•` is scalar multiplication: `r • M` multiplies every entry of matrix `M` by scalar `r`.
-
-The matrix is indexed by `Fin n -> Bool`, so it has size `2^n x 2^n`. The proof uses induction on `n` and the special block structure of the Huang matrix.
-
-## Big picture
-
-The Huang matrix is built recursively using a block form. At a high level, if we write
-
-```
-A_{n+1} = [ A_n   I
-            I    -A_n ]
-```
-
-then squaring this block matrix gives
-
-```
-A_{n+1}^2 = [ A_n^2 + I   0
-              0     A_n^2 + I ]
-```
-
-By the induction hypothesis, `A_n^2 = n I`, so each diagonal block becomes `(n+1) I`. That yields
-
-```
-A_{n+1}^2 = (n+1) I
-```
-
-This is exactly what the Lean proof encodes.
-
-## Step-by-step reading of the Lean proof
-
-### 1) Induction on n
-
-The proof starts with:
+In Lean, the hypercube graph is defined as a `SimpleGraph` whose adjacency relation holds exactly when two vertices differ in exactly one coordinate:
 
 ```lean
-induction' n with n ih;
+def hypercube_graph (n : ℕ) : SimpleGraph (Fin n → Bool) :=
+  SimpleGraph.fromRel (fun x y => (Finset.filter (fun i => x i ≠ y i) Finset.univ).card = 1)
 ```
 
-- Base case `n = 0`: the matrix `H_0` is the 1×1 zero matrix `[0]` (see Section 6). Its square is `[0]`, and `0 • I = [0]`, so `H_0² = 0 • I` ✓
-- Inductive step: assume the result holds for `n`, prove it for `n+1`.
+Key ideas:
 
-### 2) Use the block definition
+- `Fin n → Bool` is the type of Boolean strings of length `n` (each index `i : Fin n` gives a bit).
+- `Finset.univ` is the finite set of all indices `i : Fin n`.
+- `Finset.filter (fun i => x i ≠ y i)` selects the coordinates where `x` and `y` differ.
+- The adjacency condition is that this set has cardinality 1, i.e., Hamming distance 1.
 
-The Huang matrix is defined recursively. The proof names that definition:
+The lemma `hypercube_graph_adj` immediately unfolds this definition:
 
 ```lean
-have h_def : huang_matrix (n + 1) =
-  Matrix.reindex ... (Matrix.fromBlocks (huang_matrix n) 1 1 (-huang_matrix n)) := by rfl
+lemma hypercube_graph_adj {n : ℕ} (x y : Fin n → Bool) :
+  (hypercube_graph n).Adj x y ↔
+    (Finset.filter (fun i => x i ≠ y i) Finset.univ).card = 1 := by
+  simp [hypercube_graph]
 ```
 
-Two details:
+This lemma is a convenience rule for rewriting adjacency into a cardinality statement.
 
-- `Matrix.fromBlocks` builds the block matrix `[A_n I; I -A_n]`.
-- `Matrix.reindex` just reorders indices so the block form matches the indexing by `(Fin (n+1) -> Bool)`. It does not change the algebraic content.
+## 2. Neighbor parity and the `chi` sign
 
-### 3) Square the block matrix
-
-The proof then expands the square of the block matrix:
+The file uses a parity-based function `chi` (defined elsewhere) and proves that neighbors in the hypercube have opposite `chi` values:
 
 ```lean
-(Matrix.fromBlocks A I I (-A))^2
-  = Matrix.fromBlocks ((n+1)•I) 0 0 ((n+1)•I)
+lemma chi_univ_neighbor {n : ℕ} (x y : Fin n → Bool)
+  (h_adj : (hypercube_graph n).Adj x y) :
+  chi Finset.univ x = -chi Finset.univ y := by
+  -- proof omitted
 ```
 
-This is the critical calculation. Let's expand the block multiplication explicitly:
+Intuition:
 
-\[
-\begin{bmatrix} A & I \\ I & -A \end{bmatrix}
-\begin{bmatrix} A & I \\ I & -A \end{bmatrix}
-= \begin{bmatrix} A^2 + I & AI - IA \\ IA - AI & I + A^2 \end{bmatrix}
-= \begin{bmatrix} A^2 + I & 0 \\ 0 & A^2 + I \end{bmatrix}
-\]
+- If `x` and `y` differ in exactly one coordinate, then the number of `true` bits changes by 1.
+- Therefore the parity flips, and a parity-based sign like `chi` must change sign.
 
-**Off-diagonal cancellation**: Since \(AI = IA = A\) (identity commutes with everything), we have \(AI + I(-A) = A - A = 0\).
+## 3. Relating `g_val` and function changes on edges
 
-**Diagonal blocks**: Both diagonal blocks are \(A^2 + I\). By the induction hypothesis \(A^2 = nI\), so:
-\[
-A^2 + I = nI + I = (n+1)I
-\]
+The lemma `g_val_neighbor_eq_iff_f_ne` states that along a hypercube edge, equality of `g_val` is equivalent to `f` changing value:
 
-Therefore:
-\[
-A_{n+1}^2 = \begin{bmatrix} (n+1)I & 0 \\ 0 & (n+1)I \end{bmatrix} = (n+1)I
-\]
+```lean
+lemma g_val_neighbor_eq_iff_f_ne {n : ℕ}
+  (f : (Fin n → Bool) → Bool) (x y : Fin n → Bool)
+  (h_adj : (hypercube_graph n).Adj x y) :
+  g_val f x = g_val f y ↔ f x ≠ f y := by
+  -- proof omitted
+```
 
-Lean typically achieves this with:
-- `simp` to rewrite `A ⬝ I`, `I ⬝ A`, and `A ⬝ (-A)` using matrix identities
-- `simp [ih]` to apply the induction hypothesis `ih : (huang_matrix n)^2 = (n : ℝ) • I`
-- `simp` with `Matrix.fromBlocks` multiplication lemmas to reduce off-diagonal blocks to `0`
-- A ring- or arithmetic-simplification step to turn `n + 1` into `(n + 1 : ℝ)` after coercions
+This is used later to relate graph-theoretic degrees to sensitivity. The key point is that adjacency plus a sign flip controls how `g_val` behaves across an edge.
 
-### 4) Reindexing and extensionality
+## 4. Sensitivity as degree in induced subgraphs
 
-The remainder of the Lean code uses `simp`, `ext`, and a case split on `i = j` to conclude the final equality after reindexing. This is bookkeeping to align the matrix entries with the identity matrix definition.
+Two lemmas connect Boolean function sensitivity to degrees in induced subgraphs of the hypercube. The positive and negative level sets are written `S_pos f` and `S_neg f`.
 
-## Why \(A^2 = nI\) matters: eigenvalues
+For `S_pos`:
 
-If a square matrix \(A\) satisfies \(A^2 = nI\), then every eigenvalue \(\lambda\) must satisfy \(\lambda^2 = n\).
+```lean
+lemma sensitivity_at_x_eq_degree_in_S_pos {n : ℕ}
+  (f : (Fin n → Bool) → Bool) (x : Fin n → Bool) (hx : x ∈ S_pos f) :
+  (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ f x ≠ f y) Finset.univ).card =
+  (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ y ∈ S_pos f) Finset.univ).card := by
+  -- proof omitted
+```
 
-**Proof**: If \(Av = \lambda v\) for some nonzero vector \(v\), then:
-\[
-A^2 v = A(Av) = A(\lambda v) = \lambda(Av) = \lambda^2 v
-\]
+And similarly for `S_neg`:
 
-But \(A^2 = nI\) also implies \(A^2 v = nv\). Therefore:
-\[
-\lambda^2 v = nv
-\]
+```lean
+lemma sensitivity_at_x_eq_degree_in_S_neg {n : ℕ}
+  (f : (Fin n → Bool) → Bool) (x : Fin n → Bool) (hx : x ∈ S_neg f) :
+  (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ f x ≠ f y) Finset.univ).card =
+  (Finset.filter (fun y => (hypercube_graph n).Adj x y ∧ y ∈ S_neg f) Finset.univ).card := by
+  -- proof omitted
+```
 
-Since \(v \neq 0\), we conclude \(\lambda^2 = n\).
+Interpretation:
 
-### Consequences
+- The left side counts neighbors where `f` changes value (sensitivity at `x`).
+- The right side counts neighbors staying inside the same level set, i.e., degree in the induced subgraph on `S_pos` or `S_neg`.
+- These lemmas show that in the appropriate level set, sensitivity is exactly a graph degree.
 
-- Over \(\mathbb{R}\), the only possible eigenvalues are \(+\sqrt{n}\) and \(-\sqrt{n}\).
-- The spectrum is symmetric: if \(\lambda\) is an eigenvalue, so is \(-\lambda\).
-- The matrix is diagonalizable over \(\mathbb{R}\) if it is symmetric. The Huang matrix is symmetric (proved in **Section 12**), so it has an orthonormal eigenbasis with eigenvalues \(\pm\sqrt{n}\).
+## 5. Induced hypercube graphs and reindexing
 
-## Summary
+The file defines induced hypercube graphs and also a version where vertices are reindexed by `Fin (2^n)`.
 
-The proof shows that the Huang matrix is an involution up to scaling: squaring it gives a scalar multiple of the identity. This immediately pins down the eigenvalues to the square roots of `n`, which is exactly why the comment at the end of the Lean file says: "The eigenvalues of the Huang matrix square to n."
+Induced subgraph on a finite set `S` of Boolean vectors:
+
+```lean
+def induced_hypercube_graph {n : ℕ} (S : Finset (Fin n → Bool)) :
+  SimpleGraph {x // x ∈ S} :=
+  SimpleGraph.induce (S : Set (Fin n → Bool)) (hypercube_graph n)
+```
+
+Hypercube graph on `Fin (2^n)` using the equivalence between bitstrings and numbers:
+
+```lean
+def hypercube_graph_fin (n : ℕ) : SimpleGraph (Fin (2^n)) :=
+  (hypercube_graph n).map (boolFunEquivFin n).toEmbedding
+```
+
+And the induced graph reindexed by `Fin (card S)`:
+
+```lean
+def induced_hypercube_graph_fin_card {n : ℕ} (S : Finset (Fin (2^n))) :
+  SimpleGraph (Fin (Fintype.card {x // x ∈ S})) :=
+  let G := SimpleGraph.induce (S : Set (Fin (2^n))) (hypercube_graph_fin n)
+  let equiv := Fintype.equivFin {x // x ∈ S}
+  G.map equiv.toEmbedding
+```
+
+These definitions allow later spectral arguments to be stated over standard finite types (`Fin k`) while preserving the hypercube adjacency structure.
+
+## Takeaways
+
+- The hypercube graph is defined by Hamming distance 1 using a filtered index set.
+- Adjacency implies parity flips, which shows up as a sign change in `chi`.
+- Sensitivity at a point is captured by degree in an induced subgraph of the hypercube.
+- The hypercube can be reindexed to `Fin (2^n)` and induced subgraphs can be reindexed to `Fin (card S)` without losing adjacency information.
