@@ -1,0 +1,12 @@
+- Fewer sections - Match some or all visualization and proof sections. Perhaps not definitions.
+- Code section boundaries often cut functions
+  - sensitivity, chi, degree, finSuccEquiv_huang_custom
+  - src/frontend.tsx is really long as has some hardcoded lists of sections
+  - src/sections/ has the exact code
+    - src/sectionContent.ts generated from this?
+  - new-section-ranges.js has incorrect boundaries
+    - These must come from find-sections.js but it has more than 24 sections?
+    - And also extract-sections.js
+- Don't define def and other simple stuff
+- Break the code into files?
+- At most 80 character lines
